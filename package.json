@@ -1,0 +1,32 @@
+{
+  "name": "chromium-trace-analyzer",
+  "version": "1.0.0",
+  "description": "An analyzer for Chromium trace events.",
+  "bin": {
+    "chromium-trace-analyzer": "bin/cli.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "prepublishOnly": "npm run build",
+    "cli": "bin/cli.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sethfowler/chromium-trace-analyzer.git"
+  },
+  "keywords": [
+    "Chromium",
+    "trace",
+    "events",
+    "Chrome",
+    "Blink"
+  ],
+  "author": "Seth Fowler",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/sethfowler/chromium-trace-analyzer/issues"
+  },
+  "homepage": "https://github.com/sethfowler/chromium-trace-analyzer#readme"
+}
