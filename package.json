@@ -28,5 +28,8 @@
   "bugs": {
     "url": "https://github.com/sethfowler/chromium-trace-analyzer/issues"
   },
-  "homepage": "https://github.com/sethfowler/chromium-trace-analyzer#readme"
+  "homepage": "https://github.com/sethfowler/chromium-trace-analyzer#readme",
+  "dependencies": {
+    "tracium": "^0.2.1"
+  }
 }
