@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "An analyzer for Chromium trace events.",
   "bin": {
-    "chromium-trace-analyzer": "bin/cli.js"
+    "chromium-trace-analyzer": "bin/chromium-trace-analyzer"
   },
   "main": "dist/index.js",
   "scripts": {
@@ -30,6 +30,11 @@
   },
   "homepage": "https://github.com/sethfowler/chromium-trace-analyzer#readme",
   "dependencies": {
+    "colors": "^1.4.0",
+    "source-map": "^0.7.3",
     "tracium": "^0.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^12.12.14"
   }
 }
