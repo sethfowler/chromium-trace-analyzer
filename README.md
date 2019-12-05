@@ -42,9 +42,14 @@ To enable source maps, you need to specify three things:
   webpack's URL format is supported right now, unfortunately.)
 
 You can pass that information on the command line via the colon-separated
-`--sourceMap` option, as follows:
+`--sourceMap` option. So, if your source map setup looks like this:
+* Script URL ending in `foo.js`.
+* Source map file at `./dist/foo.js.map`.
+* Root of the webpack source tree at `./src`.
+
+Then you'd pass a `--sourceMap` option that looks like this:
 ```bash
-chromium-trace-analyzer --trace profile.json --sourceMap foo.js:foo.js.map:./src/
+chromium-trace-analyzer --trace profile.json --sourceMap foo.js:./dist/foo.js.map:./src
 ```
 
 You can provide `--sourceMap` multiple times to apply as many source maps as you want.
