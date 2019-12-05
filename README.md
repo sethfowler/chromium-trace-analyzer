@@ -10,6 +10,11 @@ trace from a Lighthouse audit. Given a trace, `chromium-trace-analyzer` can:
   developer tools natively provide, so you can understand where your performance
   is going.
 
+Source mapping and syntax highlighting are supported to help make the trace
+summaries as readable as possible.
+
+![Trace summary entry image](images/screenshot.png)
+
 ## Installation
 
 ```bash

@@ -21,7 +21,12 @@
     "trace",
     "events",
     "Chrome",
-    "Blink"
+    "Blink",
+    "profiler",
+    "profile",
+    "audit",
+    "Lighthouse",
+    "tracium"
   ],
   "author": "Seth Fowler",
   "license": "Apache-2.0",
