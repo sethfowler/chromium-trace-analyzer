@@ -98,3 +98,10 @@ chromium-trace-analyzer \
   --outputJsonSummary out.json \
   --outputJsonTrace out.json
 ```
+
+## References
+
+* [Documentation of the trace event format.](https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/edit)
+* [A little bit of useful discussion on trace events.](https://groups.google.com/forum/#!topic/google-chrome-developer-tools/J0pQuKeeqfw)
+* [The Tracium parser for trace events, used internally by this projects.](https://github.com/aslushnikov/tracium)
+* [The Lighthouse project, used by the Audits feature in Chrome's developer tools. Tracium is a version of Lighthouse's trace event parser.](https://github.com/GoogleChrome/lighthouse)
