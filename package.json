@@ -30,11 +30,16 @@
   },
   "homepage": "https://github.com/sethfowler/chromium-trace-analyzer#readme",
   "dependencies": {
+    "cli-highlight": "^2.1.4",
     "colors": "^1.4.0",
+    "commander": "^4.0.1",
+    "pino": "^5.14.0",
+    "pino-pretty": "^3.5.0",
     "source-map": "^0.7.3",
     "tracium": "^0.2.1"
   },
   "devDependencies": {
-    "@types/node": "^12.12.14"
+    "@types/node": "^12.12.14",
+    "@types/pino": "^5.8.13"
   }
 }

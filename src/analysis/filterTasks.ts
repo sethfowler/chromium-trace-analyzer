@@ -1,9 +1,12 @@
+import { HasAttributionInfo, isAttributedTo } from '../attributions';
+import { log } from '../log';
 import {
   AnyTask,
-  AnyTaskTrace,
+  HasTaskId,
+  TaskTrace,
   TaskTraceWithAddedData,
   TaskWithData
-} from './taskgraph';
+} from '../taskgraph';
 
 export type TaskFilterResult = {
   // Should we keep the task itself? Ancestors are implicitly kept as well.
@@ -65,9 +68,15 @@ export function markTasks(
 }
 
 export function sweepTasks(
-  tasks: TaskWithData<HasFilterMark>[]
-): TaskWithData<HasFilterMark>[] {
-  const keptTasks = tasks.filter(task => task.metadata.filterMark !== false);
+  tasks: TaskWithData<HasFilterMark & HasTaskId>[]
+): TaskWithData<HasFilterMark & HasTaskId>[] {
+  const keptTasks = tasks.filter(task => {
+    const keepTask = task.metadata.filterMark !== false;
+    if (!keepTask) {
+      log.debug(`Filtering out task ${task.metadata.taskId}`);
+    }
+    return keepTask;
+  });
   for (const task of keptTasks) {
     delete task.metadata.filterMark;
     task.children = sweepTasks(task.children);
@@ -75,15 +84,43 @@ export function sweepTasks(
   return keptTasks;
 }
 
-export function filterTasks<T extends AnyTaskTrace>(
+export function filterTasks<T extends TaskTrace<HasTaskId, {}>>(
   trace: T,
   filter: (task: NonNullable<T['_TaskType']>) => TaskFilterResult
 ): void {
+  log.debug(`Starting filterTasks pass.`);
+
   const traceWithAddedData =
-    trace as TaskTraceWithAddedData<T, HasFilterMark, {}>;
+    trace as TaskTraceWithAddedData<T, HasFilterMark & HasTaskId, {}>;
   markTasks(
     traceWithAddedData.tasks,
     filter as ((task: AnyTask) => TaskFilterResult)
   );
   traceWithAddedData.tasks = sweepTasks(traceWithAddedData.tasks);
+}
+
+export function filterTasksByUrlPattern<
+  T extends TaskTrace<HasAttributionInfo & HasTaskId, {}>
+>(
+  trace: T,
+  scriptUrlPattern: string,
+  filterType: 'fine' | 'coarse'
+): void {
+  filterTasks(trace, task => {
+    const result: TaskFilterResult = {
+      keepTask: false
+    };
+
+    const attribution = task.metadata.attributionInfo;
+    if (isAttributedTo(scriptUrlPattern, attribution)) {
+      result.keepTask = true;
+      result.keepDescendants = true;
+    }
+
+    if (result.keepTask && task.parent && filterType === 'coarse') {
+      result.keepSiblings = true;
+    }
+
+    return result;
+  });
 }

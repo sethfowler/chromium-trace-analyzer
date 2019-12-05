@@ -1,15 +1,6 @@
-import { AnyTaskTrace, TaskNode, TaskTraceWithAddedData } from './taskgraph';
-
-export type FrameInfo = {
-  url: string;
-  functionName: string | undefined;
-  lineNumber: number;
-  columnNumber: number;
-};
-
-export type HasFrameInfo = {
-  frameInfo: Map<string, FrameInfo>;
-};
+import { FrameInfo, HasFrameInfo } from '../frames';
+import { log } from '../log';
+import { AnyTaskTrace, TaskNode, TaskTraceWithAddedData } from '../taskgraph';
 
 function gatherFrameInfo(
   frameInfoMap: Map<string, FrameInfo>,
@@ -26,12 +17,16 @@ function gatherFrameInfo(
       data.columnNumber &&
       !frameInfoMap.has(frame)
     ) {
-      frameInfoMap.set(frame, {
+      const frameInfo = {
         url: data.url,
         functionName: data.functionName,  // May not be present.
         lineNumber: data.lineNumber,
         columnNumber: data.columnNumber,
-      });
+      };
+
+      log.debug(`Inferred frame ${frame} location: `, frameInfo);
+
+      frameInfoMap.set(frame, frameInfo);
     }
 
     gatherFrameInfo(frameInfoMap, task.children);
@@ -41,8 +36,9 @@ function gatherFrameInfo(
 export function inferFrameSourceLocations<T extends AnyTaskTrace>(
   trace: T
 ): asserts trace is TaskTraceWithAddedData<T, {}, HasFrameInfo> {
-  const frameInfoMap = new Map<string, FrameInfo>();
-  gatherFrameInfo(frameInfoMap, trace.tasks);
   const traceWithAddedData = trace as TaskTraceWithAddedData<T, {}, HasFrameInfo>;
+  const frameInfoMap =
+    traceWithAddedData.metadata.frameInfo ?? new Map<string, FrameInfo>();
+  gatherFrameInfo(frameInfoMap, trace.tasks);
   traceWithAddedData.metadata.frameInfo = frameInfoMap;
 }

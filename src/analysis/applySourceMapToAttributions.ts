@@ -1,11 +1,9 @@
 import path from 'path';
 import { RawSourceMap, SourceMapConsumer } from 'source-map';
 
-import { HasAttributionInfo, SourceAttribution } from './attribution';
-import {
-  TaskTrace,
-  TaskWithData
-} from './taskgraph';
+import { HasAttributionInfo, SourceAttribution } from '../attributions';
+import { log } from '../log';
+import { TaskTrace, TaskWithData } from '../taskgraph';
 import { readFileAsLines } from '../util';
 
 const fileCache = new Map<string, string[]>();
@@ -22,21 +20,25 @@ async function updateFromSourceMap(
     column: info.columnNumber - 1
   };
 
-  let originalPosition = consumer.originalPositionFor({
+  const originalPosition = consumer.originalPositionFor({
     ...generatedPosition,
     bias: SourceMapConsumer.GREATEST_LOWER_BOUND
   });
 
-  if (originalPosition.line === null) {
-    originalPosition = consumer.originalPositionFor({
-      ...generatedPosition,
-      bias: SourceMapConsumer.LEAST_UPPER_BOUND
-    });
+  if (
+    originalPosition.source === null ||
+    originalPosition.line === null ||
+    originalPosition.column === null
+  ) {
+    log.debug(`No source map entry for generated position:`, generatedPosition);
+    return;
   }
 
-  if (originalPosition.source === null) { return; }
-  if (originalPosition.line === null) { return; }
-  if (originalPosition.column === null) { return; }
+  log.debug(
+    `Found source map entry for generated position %O: %O`,
+    generatedPosition,
+    originalPosition
+  );
 
   info.generated = {
     url: info.url,
@@ -52,6 +54,12 @@ async function updateFromSourceMap(
 
   if (!webpackRoot) { return; }
 
+  if (!info.url.startsWith('webpack:')) {
+    log.warn(
+      `Can't load original file for non-webpack source map entry '${info.url}'.`
+    );
+  }
+
   const relativePath = info.url.replace(/^webpack:\/\/\//, '');
   const originalFilePath = path.resolve(webpackRoot, relativePath);
 
@@ -61,11 +69,20 @@ async function updateFromSourceMap(
       fileLines = await readFileAsLines(originalFilePath);
       fileCache.set(originalFilePath, fileLines)
     } catch {
+      // Ignore the special 'webpack' entries, but warn for other entries if we
+      // can't open for corresponding file.
+      if (!info.url.startsWith(`webpack:///webpack`)) {
+        log.warn(
+          `Failed to load original file '${originalFilePath}' corresponding to ` +
+          `source map entry '${info.url}'.`
+        );
+      }
     }
   }
 
   if (fileLines) {
-    info.sourceLine = fileLines[info.lineNumber - 1];
+    const lineNumber = info.lineNumber - 1;  // Convert to 0-based.
+    info.sourceLines = fileLines.slice(lineNumber - 2, lineNumber + 3);
   }
 }
 
@@ -78,7 +95,7 @@ async function applySourceMap(
   for (const task of tasks) {
     const info = task.metadata.attributionInfo;
     if (
-      info.kind === 'source' &&
+      info.kind === 'sourceLocation' &&
       info.url.includes(scriptUrlPattern)
     ) {
       await updateFromSourceMap(webpackRoot, consumer, info);
@@ -88,15 +105,29 @@ async function applySourceMap(
   }
 }
 
+export type SourceMapSpec = {
+  urlPattern: string;
+  map: object;
+  webpackRoot?: string;
+};
+
+// A pass that rewrites source location attributions using a source map so that
+// the results are easier to interpret for humans.
 export async function applySourceMapToAttributions(
   trace: TaskTrace<HasAttributionInfo, {}>,
-  mappings: ({ urlPattern: string, map: object })[],
-  webpackRoot?: string
+  mappings: SourceMapSpec[]
 ): Promise<void> {
+  log.debug(`Starting applySourceMapToAttributions pass.`);
+
   for (const mapping of mappings) {
     const sourceMap = mapping.map as RawSourceMap;
     await SourceMapConsumer.with(sourceMap, null, async (consumer) => {
-      await applySourceMap(mapping.urlPattern, webpackRoot, consumer, trace.tasks);
+      await applySourceMap(
+        mapping.urlPattern,
+        mapping.webpackRoot,
+        consumer,
+        trace.tasks
+      );
     });
   }
 }

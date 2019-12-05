@@ -1,11 +1,10 @@
 import { TaskGroupIds } from 'tracium/lib/task-groups';
-import { AttributionInfo, HasAttributionInfo, isAttributedTo } from './attribution';
-import {
-  HasTaskId,
-  TaskTrace,
-  TaskWithData
-} from './taskgraph';
+import { AttributionInfo, HasAttributionInfo, isAttributedTo } from '../attributions';
+import { log } from '../log';
+import { HasTaskId, TaskTrace, TaskWithData } from '../taskgraph';
 
+// A breakdown of the contributions of different kinds of tasks to the overall
+// runtime attributed to some source location or file.
 export type Breakdown = {
   [kind in TaskGroupIds]: number
 };
@@ -32,21 +31,32 @@ function breakdownTotal(breakdown: Breakdown): number {
     breakdown.other
 }
 
+// Merge the totals from one breakdown into another using the provided
+// operation.
 function mergeBreakdownInto(
   toMerge: Readonly<Breakdown>,
   existing: Breakdown,
   operation: (toMergeValue: number, existingValue: number) => number
 ): void {
-  existing.parseHTML = operation(toMerge.parseHTML, existing.parseHTML);
-  existing.styleLayout = operation(toMerge.styleLayout, existing.styleLayout);
-  existing.paintCompositeRender = operation(toMerge.paintCompositeRender, existing.paintCompositeRender);
-  existing.scriptParseCompile = operation(toMerge.scriptParseCompile, existing.scriptParseCompile);
-  existing.scriptEvaluation = operation(toMerge.scriptEvaluation, existing.scriptEvaluation);
-  existing.garbageCollection = operation(toMerge.garbageCollection, existing.garbageCollection);
-  existing.other = operation(toMerge.other, existing.other);
+  existing.parseHTML =
+    operation(toMerge.parseHTML, existing.parseHTML);
+  existing.styleLayout =
+    operation(toMerge.styleLayout, existing.styleLayout);
+  existing.paintCompositeRender =
+    operation(toMerge.paintCompositeRender, existing.paintCompositeRender);
+  existing.scriptParseCompile =
+    operation(toMerge.scriptParseCompile, existing.scriptParseCompile);
+  existing.scriptEvaluation =
+    operation(toMerge.scriptEvaluation, existing.scriptEvaluation);
+  existing.garbageCollection =
+    operation(toMerge.garbageCollection, existing.garbageCollection);
+  existing.other =
+    operation(toMerge.other, existing.other);
 }
 
-export type AttributionAndDuration = {
+// Data about how much the time associated with a particular attribution is
+// being spent.
+export type AttributionStatistics = {
   attribution: AttributionInfo;
   duration: number;
   breakdown: Breakdown;
@@ -54,13 +64,14 @@ export type AttributionAndDuration = {
 };
 
 export type SummaryByAttribution = {
-  byCumulativeDuration: AttributionAndDuration[];
-  byLongestInstanceDuration: AttributionAndDuration[];
+  byCumulativeDuration: AttributionStatistics[];
+  byLongestInstanceDuration: AttributionStatistics[];
 };
 
+// A string id for an attribution, used as a map key.
 function attributionId(info: AttributionInfo): string {
   switch (info.kind) {
-    case 'source':
+    case 'sourceLocation':
       return `${info.kind}#${info.url}#${info.columnNumber}#${info.lineNumber}`;
 
     case 'file':
@@ -75,12 +86,15 @@ function attributionId(info: AttributionInfo): string {
   }
 }
 
-function getOrCreateDurations(
-  map: Map<string, AttributionAndDuration>,
+// Create attribution statistics for the given attribution, or if we already
+// have them, merge information about this new instance of the attribution into
+// them.
+function createOrMergeStatistics(
+  map: Map<string, AttributionStatistics>,
   attributionId: string,
   taskId: number,
   info: AttributionInfo
-): AttributionAndDuration {
+): AttributionStatistics {
   let durations = map.get(attributionId);
   if (!durations) {
     durations = {
@@ -111,21 +125,26 @@ function getOrCreateDurations(
   return durations;
 }
 
-function gatherDurations(
-  cumulativeDurationMap: Map<string, AttributionAndDuration>,
-  longestDurationMap: Map<string, AttributionAndDuration>,
+function gatherStatistics(
+  cumulativeDurationMap: Map<string, AttributionStatistics>,
+  longestDurationMap: Map<string, AttributionStatistics>,
   tasks: TaskWithData<HasTaskId & HasAttributionInfo>[]
 ): Breakdown {
   const allSubtreesBreakdown = createBreakdown();
 
   for (const task of tasks) {
-    const subtreeBreakdown = gatherDurations(
+    // Gather statistics for all child tasks and a breakdown of where the child
+    // tasks are spending their time.
+    const subtreeBreakdown = gatherStatistics(
       cumulativeDurationMap,
       longestDurationMap,
       task.children
     );
 
     if (task.group.id in subtreeBreakdown) {
+      // We consider this task's contribution to the breakdown to be the portion
+      // of its duration that was not explained by child tasks. In other words,
+      // this is 'self' time.
       subtreeBreakdown[task.group.id] = Math.max(
         task.duration - breakdownTotal(subtreeBreakdown),
         0
@@ -140,8 +159,9 @@ function gatherDurations(
     const attrId = attributionId(info);
     const taskId = task.metadata.taskId;
 
+    // Update the cumulative duration for this task's attributed location.
     const cumulativeDurations =
-      getOrCreateDurations(cumulativeDurationMap, attrId, taskId, info);
+      createOrMergeStatistics(cumulativeDurationMap, attrId, taskId, info);
     cumulativeDurations.duration += subtreeDuration;
     mergeBreakdownInto(
       subtreeBreakdown,
@@ -149,8 +169,9 @@ function gatherDurations(
       (toMerge, existing) => toMerge + existing
     );
 
+    // Update the longest instance for this task's attributed location.
     const longestDurations =
-      getOrCreateDurations(longestDurationMap, attrId, taskId, info);
+      createOrMergeStatistics(longestDurationMap, attrId, taskId, info);
     if (subtreeDuration > longestDurations.duration) {
       longestDurations.duration = subtreeDuration;
       mergeBreakdownInto(
@@ -160,6 +181,8 @@ function gatherDurations(
       );
     }
 
+    // Add this task's breakdown to the breakdown for all subtrees at this
+    // level; this will end up making up the parent task's "other" time.
     mergeBreakdownInto(
       allSubtreesBreakdown,
       subtreeBreakdown,
@@ -174,10 +197,10 @@ export function createSummaryByAttribution(
   trace: TaskTrace<HasTaskId & HasAttributionInfo, {}>,
   scriptUrlPattern?: string
 ): SummaryByAttribution {
-  const cumulativeDurationMap = new Map<string, AttributionAndDuration>();
-  const longestDurationMap = new Map<string, AttributionAndDuration>();
+  const cumulativeDurationMap = new Map<string, AttributionStatistics>();
+  const longestDurationMap = new Map<string, AttributionStatistics>();
 
-  gatherDurations(cumulativeDurationMap, longestDurationMap, trace.tasks);
+  gatherStatistics(cumulativeDurationMap, longestDurationMap, trace.tasks);
 
   // Sort the results from largest to smallest durations.
   let byCumulativeDuration = [...cumulativeDurationMap.values()]
@@ -185,6 +208,7 @@ export function createSummaryByAttribution(
   let byLongestInstanceDuration = [...longestDurationMap.values()]
     .sort((a, b) => b.duration - a.duration);
 
+  // Filter the results by URL pattern if the caller requested it.
   if (scriptUrlPattern) {
     byCumulativeDuration = byCumulativeDuration.filter(task =>
       isAttributedTo(scriptUrlPattern, task.attribution)
@@ -197,20 +221,13 @@ export function createSummaryByAttribution(
   return { byCumulativeDuration, byLongestInstanceDuration };
 }
 
-export type SummaryByDurationBuckets = {
-};
-
-// TODO
-export function createSummaryByDurationBuckets(
-  _trace: TaskTrace<HasTaskId & HasAttributionInfo, {}>
-): SummaryByDurationBuckets {
-  return {};
-}
-
 export type SummaryByTimelineBuckets = {
 };
 
-// TODO
+// TODO: It might be interesting to provide statistics for bucketed chunks of
+// the timeline so we could distinguish between things that take a lot of time
+// during initialization and things that take a lot of time during the steady
+// state.
 export function createSummaryByTimelineBuckets(
   _trace: TaskTrace<HasTaskId & HasAttributionInfo, {}>
 ): SummaryByTimelineBuckets {
@@ -219,17 +236,17 @@ export function createSummaryByTimelineBuckets(
 
 export type Summary = {
   byAttribution: SummaryByAttribution;
-  byDurationBuckets: SummaryByDurationBuckets;
   byTimelineBuckets: SummaryByTimelineBuckets;
 };
 
-export function createSummary(
+export function summarize(
   trace: TaskTrace<HasTaskId & HasAttributionInfo, {}>,
   scriptUrlPattern?: string
 ): Summary {
+  log.debug(`Starting summarize pass.`);
+
   return {
     byAttribution: createSummaryByAttribution(trace, scriptUrlPattern),
-    byDurationBuckets: createSummaryByDurationBuckets(trace),
     byTimelineBuckets: createSummaryByTimelineBuckets(trace)
   };
 }
