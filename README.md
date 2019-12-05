@@ -10,6 +10,12 @@ trace from a Lighthouse audit. Given a trace, `chromium-trace-analyzer` can:
   developer tools natively provide, so you can understand where your performance
   is going.
 
+## Installation
+
+```bash
+npm install -g @sethfowler/chromium-trace-analyzer
+```
+
 ## Usage
 
 To get a quick summary of the hottest tasks in the trace:
