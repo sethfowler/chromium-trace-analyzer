@@ -158,9 +158,10 @@ function propagateBySequence(
   }
 
   // Walk over the tasks in sequence and try to propagate the most recent source
-  // location to it. For tasks before the first source location, we that first
-  // source location backwards to them. (That's why we find the first source
-  // location above.)
+  // location to it. For tasks before the first source location, we propagate
+  // that first source location backwards to them. (That's why we find the first
+  // source location above; that's the one we're potentially going to be
+  // propagating backwards.)
   for (const task of tasks) {
     const attrInfo = task.metadata.attributionInfo;
     if (attrInfo.kind === 'sourceLocation') {
