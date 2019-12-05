@@ -11,15 +11,17 @@ trace from a Lighthouse audit. Given a trace, `chromium-trace-analyzer` can:
   is going.
 
 Source mapping and syntax highlighting are supported to help make the trace
-summaries as readable as possible.
+summaries as readable as possible. Here's an example summary entry:
 
 ![Trace summary entry image](images/screenshot.png)
+
 
 ## Installation
 
 ```bash
 npm install -g @sethfowler/chromium-trace-analyzer
 ```
+
 
 ## Usage
 
@@ -58,6 +60,7 @@ chromium-trace-analyzer --trace profile.json --sourceMap foo.js:./dist/foo.js.ma
 ```
 
 You can provide `--sourceMap` multiple times to apply as many source maps as you want.
+
 
 ## Advanced usage
 
