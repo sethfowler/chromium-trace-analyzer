@@ -1,4 +1,5 @@
 import { assignAttributions } from './assignAttributions';
+import { findAttributionRoots } from './findAttributionRoots';
 import { inferFrameSourceLocations } from './inferFrameSourceLocations';
 import { propagateAttributions } from './propagateAttributions';
 
@@ -32,6 +33,7 @@ function propagateAttributionFromFrameInfo(
 
     return {
       kind: 'file',
+      isRoot: taskAttribution.isRoot,
       lighthouseAttributableURLs: [...taskAttribution.lighthouseAttributableURLs],
       triggers: [...taskAttribution.triggers],
       url: frameInfo.url
@@ -40,6 +42,7 @@ function propagateAttributionFromFrameInfo(
 
   return {
     kind: 'sourceLocation',
+    isRoot: taskAttribution.isRoot,
     lighthouseAttributableURLs: [...taskAttribution.lighthouseAttributableURLs],
     triggers: [...taskAttribution.triggers],
     ...frameInfo
@@ -88,24 +91,18 @@ function updateFrameAttributions(
   return changed;
 }
 
-// This is a meta-pass that runs all of the attribution-related passes and
-// labels the tasks in the provided trace with the best-quality attributions it
-// can infer.
-export function inferAttributions<T extends TaskTrace<HasTaskId, {}>>(
-  trace: T
-): asserts trace is TaskTraceWithAddedData<T, HasAttributionInfo, HasFrameInfo> {
-  log.debug(`Starting inferAttributions pass.`);
-
-  inferFrameSourceLocations(trace);
-  assignAttributions(trace);
-
+// A meta-pass that iteratively propagates attributions and then reruns
+// inference passes that might be able to get better results after propagation.
+function propagateAndInferAttributions(
+  trace: TaskTrace<HasAttributionInfo & HasTaskId, HasFrameInfo>
+): void {
   // Attribution propagation is an iterative process that should converge, but
   // just in case there's a bug that prevents convergence, limit the number of
   // iterations we'll perform.
   const iterationLimit = 10;
 
   for (let i = 0; i < iterationLimit; i++) {
-    log.debug(`Starting inferAttributions propagation: iteration ${i}.`);
+    log.debug(`Starting propagateAndInferAttributions: iteration ${i}.`);
 
     // Propagate attributions.
     propagateAttributions(trace);
@@ -117,10 +114,24 @@ export function inferAttributions<T extends TaskTrace<HasTaskId, {}>>(
       updateFrameAttributions(trace.metadata.frameInfo, trace.tasks);
 
     if (!attributionsChanged) {
-      log.debug(`inferAttributions propagation: done.`);
+      log.debug(`propagateAndInferAttributions: done.`);
       return;
     }
   }
 
-  log.debug(`inferAttributions propagation: exceeded iteration limit!`);
+  log.debug(`propagateAndInferAttributions: exceeded iteration limit!`);
+}
+
+// This is a meta-pass that runs all of the attribution-related passes and
+// labels the tasks in the provided trace with the best-quality attributions it
+// can infer.
+export function inferAttributions<T extends TaskTrace<HasTaskId, {}>>(
+  trace: T
+): asserts trace is TaskTraceWithAddedData<T, HasAttributionInfo, HasFrameInfo> {
+  log.debug(`Starting inferAttributions pass.`);
+
+  inferFrameSourceLocations(trace);
+  assignAttributions(trace);
+  propagateAndInferAttributions(trace);
+  findAttributionRoots(trace);
 }

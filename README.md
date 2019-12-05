@@ -41,6 +41,13 @@ substring of the script URL:
 chromium-trace-analyzer --trace profile.json --taskFilter foo.js
 ```
 
+You can filter using either the original URL or the URL after source maps have
+been applied. You can also optionally specify a line number, which can be used
+to filter out everything but a specific function:
+```bash
+chromium-trace-analyzer --trace profile.json --taskFilter original.js:123
+```
+
 To enable source maps, you need to specify three things:
 * A substring of the script URL that you want the source map to apply to.
 * The path to the source map file (.js.map) itself.

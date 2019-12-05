@@ -103,8 +103,9 @@ export function filterTasksByUrlPattern<
   T extends TaskTrace<HasAttributionInfo & HasTaskId, {}>
 >(
   trace: T,
+  filterType: 'fine' | 'coarse',
   scriptUrlPattern: string,
-  filterType: 'fine' | 'coarse'
+  lineNumber?: number
 ): void {
   filterTasks(trace, task => {
     const result: TaskFilterResult = {
@@ -112,7 +113,7 @@ export function filterTasksByUrlPattern<
     };
 
     const attribution = task.metadata.attributionInfo;
-    if (isAttributedTo(scriptUrlPattern, attribution)) {
+    if (isAttributedTo(attribution, scriptUrlPattern, lineNumber)) {
       result.keepTask = true;
       result.keepDescendants = true;
     }

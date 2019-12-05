@@ -95,11 +95,12 @@ export function showPrettySummary(
       showAttribution(writer, stats.attribution);
 
       writer.withIndent(() => {
-        writer.log(`- Duration: `.bold + `${stats.duration}ms`.red);
+        writer.log(`- Duration: `.bold + `${stats.breakdown.total}ms`.red);
 
         writer.log(`- Breakdown:`.bold);
         writer.withIndent(() => {
           for (const [kind, duration] of Object.entries(stats.breakdown)) {
+            if (kind === 'total') { continue; }
             if (duration === 0) { continue; }
             writer.log(`- ${kind}: ` + `${duration}ms`.red);
           }

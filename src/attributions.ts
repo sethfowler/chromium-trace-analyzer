@@ -7,6 +7,11 @@ export type Trigger = string;
 
 // Things associated with all kinds of task attributions.
 export type BaseAttribution = {
+  // True if we know that this task is an attribution root. That means that the
+  // task has no ancestors with the same attribution; it's the entry point to a
+  // subtree with that attribution.
+  isRoot: boolean;
+
   // Lighthouse's opinion as to the task's attribtion.
   lighthouseAttributableURLs: string[];
 
@@ -51,17 +56,46 @@ export type HasAttributionInfo = {
   attributionInfo: AttributionInfo;
 };
 
+// Compute a string id for an attribution, useful as a map or set key.
+export function attributionId(info: AttributionInfo): string {
+  switch (info.kind) {
+    case 'sourceLocation':
+      return `${info.kind}#${info.url}#${info.columnNumber}#${info.lineNumber}`;
+
+    case 'file':
+      return `${info.kind}#${info.url}`;
+
+    case 'unknown':
+      return `${info.kind}`;
+
+    default:
+      const unknown: never = info;
+      throw new Error(`Unexpected attribution kind: ${JSON.stringify(unknown)}`);
+  }
+}
+
 // Given a script URL substring, returns true if the provided attribution
 // matches that script URL.
 export function isAttributedTo(
+  info: AttributionInfo,
   scriptUrlPattern: string,
-  info: AttributionInfo
+  lineNumber?: number
 ): boolean {
   if (info.kind === 'sourceLocation') {
-    if (info.url.includes(scriptUrlPattern)) { return true; }
-    const generatedUrl = info.generated?.url;
-    if (generatedUrl && generatedUrl.includes(scriptUrlPattern)) { return true; }
+    if (info.url.includes(scriptUrlPattern)) {
+      if (lineNumber === undefined) { return true; }
+      if (info.lineNumber === lineNumber) { return true; }
+    }
+
+    const generated = info.generated;
+    if (generated && generated.url.includes(scriptUrlPattern)) {
+      if (lineNumber === undefined) { return true; }
+      if (generated.lineNumber === lineNumber) { return true; }
+    }
   }
+
+  // If a line number was specified, we can only match source locations.
+  if (lineNumber !== undefined) { return false; }
 
   if (info.kind === 'file') {
     if (info.url.includes(scriptUrlPattern)) { return true; }

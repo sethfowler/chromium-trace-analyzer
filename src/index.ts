@@ -7,6 +7,7 @@ import {
   SourceMapSpec
 } from './analysis/applySourceMapToAttributions';
 import { createTaskTrace } from './analysis/createTaskTrace';
+import { computeBreakdowns } from './analysis/computeBreakdowns';
 import { filterTasksByUrlPattern } from './analysis/filterTasks';
 import { inferAttributions } from './analysis/inferAttributions';
 import { summarize } from './analysis/summarize';
@@ -44,8 +45,10 @@ export async function main() {
       []
     )
     .option(
-      '--taskFilter <urlPattern>',
-      'Filter out tasks not related to URLs containing urlPattern.'
+      '--taskFilter <urlPattern:line?>',
+      `Filter out tasks not related to URLs containing urlPattern. An optional ` +
+      `source line can be specified to filter out everything except one ` +
+      `source location.`
     )
     .option(
       '--taskFilterType <fine|coarse>',
@@ -101,6 +104,9 @@ export async function main() {
     await applySourceMapToAttributions(trace, specs);
   }
 
+  console.log(`Computing breakdowns...`.green);
+  computeBreakdowns(trace);
+
   const taskFilterType = args.taskFilterType;
   if (taskFilterType !== 'fine' && taskFilterType !== 'coarse') {
     console.error(`--taskFilterType must be 'fine' or 'coarse'`);
@@ -108,8 +114,18 @@ export async function main() {
   }
 
   if (args.taskFilter) {
-    console.log(`Filtering (${taskFilterType})...`.green);
-    filterTasksByUrlPattern(trace, args.taskFilter, taskFilterType);
+    const [urlPattern, line] = args.taskFilter.split(':');
+    const lineNumber = line === undefined ? undefined : Number(line);
+    if (lineNumber !== undefined && Number.isNaN(lineNumber)) {
+      console.error(`--taskFilter line number must be numeric`);
+      process.exit(1);
+    }
+
+    const position = lineNumber === undefined ? '' : `:${lineNumber}`;
+    console.log(
+      `Applying ${taskFilterType} filter for ${urlPattern}${position}...`.green
+    );
+    filterTasksByUrlPattern(trace, taskFilterType, urlPattern, lineNumber);
   }
 
   console.log(`Summarizing...`.green);
@@ -150,7 +166,8 @@ export async function main() {
     }
   }
 
-  if (Number.isNaN(Number(args.top))) {
+  const topCount = Number(args.top);
+  if (Number.isNaN(topCount)) {
     console.error(`--top requires a numeric argument`);
     process.exit(1);
   }
@@ -158,14 +175,14 @@ export async function main() {
   console.log();
   console.log();
   showPrettySummary(
-    `Top ${args.top} Source Locations by Cumulative Duration`,
-    summary.byAttribution.byCumulativeDuration.slice(0, args.top)
+    `Top ${topCount} Source Locations by Cumulative Duration`,
+    summary.byAttribution.byCumulativeDuration.slice(0, topCount)
   );
 
   console.log();
   console.log();
   showPrettySummary(
-    `Top ${args.top} Source Locations by Longest Instance Duration`,
-    summary.byAttribution.byLongestInstanceDuration.slice(0, args.top)
+    `Top ${topCount} Source Locations by Longest Instance Duration`,
+    summary.byAttribution.byLongestInstanceDuration.slice(0, topCount)
   );
 }

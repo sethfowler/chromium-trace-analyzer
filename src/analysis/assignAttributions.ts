@@ -24,6 +24,7 @@ function extractAttribution(
 ): AttributionInfo {
   const taskId = task.metadata.taskId;
   const baseAttribution: BaseAttribution = {
+    isRoot: false,
     lighthouseAttributableURLs: [...task.attributableURLs],
     triggers: [scopeTrigger]
   };
@@ -158,6 +159,7 @@ function simplifyAttribution(
     );
     return {
       kind: 'file',
+      isRoot: info.isRoot,
       lighthouseAttributableURLs: info.lighthouseAttributableURLs,
       triggers: info.triggers,
       url: info.url
