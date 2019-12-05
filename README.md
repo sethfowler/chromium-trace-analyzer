@@ -13,7 +13,7 @@ trace from a Lighthouse audit. Given a trace, `chromium-trace-analyzer` can:
 Source mapping and syntax highlighting are supported to help make the trace
 summaries as readable as possible. Here's an example summary entry:
 
-![Trace summary entry image](images/screenshot.png)
+![Trace summary entry image](https://raw.githubusercontent.com/sethfowler/chromium-trace-analyzer/master/images/screenshot.png)
 
 
 ## Installation
