@@ -188,10 +188,6 @@ function gatherStatistics(
     });
   }
 
-  for (const [attrId, breakdown] of descendantBreakdowns.entries()) {
-    log.info(`Descendant breakdown for ${attrId}: ${JSON.stringify(breakdown)}`);
-  }
-
   return descendantBreakdowns;
 }
 
