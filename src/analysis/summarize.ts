@@ -21,6 +21,9 @@ export type AttributionStatistics = {
   // of the attribution from multiple tasks.
   attribution: Readonly<AttributionInfo>;
 
+  // All attributions for descendant tasks.
+  descendantAttributions: Readonly<AttributionInfo>[];
+
   // A breakdown of how the time associated with the source location is being
   // spent.
   breakdown: Breakdown;
@@ -41,6 +44,7 @@ export type AttributionStatistics = {
 // Accumulate the statistics from a new task into an existing set of statistics.
 function accumulateStatistics(
   stats: AttributionStatistics,
+  descendantAttributions: Map<string, AttributionInfo>,
   task: TaskWithData<HasAttributionInfo & HasBreakdown & HasTaskId>
 ): void {
   stats.breakdown = sumOfBreakdowns(
@@ -65,6 +69,15 @@ function accumulateStatistics(
   if (!stats.taskIds.includes(task.metadata.taskId)) {
     stats.taskIds.push(task.metadata.taskId);
   }
+
+  const existingDescendantAttrs = new Set<string>(
+    stats.descendantAttributions.map(attributionId)
+  );
+  for (const [attrId, attr] of descendantAttributions.entries()) {
+    if (!existingDescendantAttrs.has(attrId)) {
+      stats.descendantAttributions.push(attr);
+    }
+  }
 }
 
 function gatherStatistics(
@@ -72,15 +85,31 @@ function gatherStatistics(
   longestDurationStatsMap: Map<string, AttributionStatistics>,
   taskStatsMap: Map<number, AttributionStatistics>,
   tasks: TaskWithData<HasAttributionInfo & HasBreakdown & HasTaskId>[]
-): void {
+): Map<string, AttributionInfo> {
+  const descendantAttributions = new Map<string, AttributionInfo>();
+
   for (const task of tasks) {
     // Gather statistics for all child tasks.
-    gatherStatistics(
+    const descendantAttributionsForTask = gatherStatistics(
       cumulativeStatsMap,
       longestDurationStatsMap,
       taskStatsMap,
       task.children
     );
+
+    const info = task.metadata.attributionInfo;
+    const attrId = attributionId(info);
+    const taskId = task.metadata.taskId;
+
+    // Propagate descendant attributions up the tree.
+    descendantAttributions.set(attrId, cloneDeep(info));
+    for (const [attrId, attr] of descendantAttributionsForTask.entries()) {
+      descendantAttributions.set(attrId, attr);
+    }
+
+    // Remove this task from its set of descendant attributions. This is just to
+    // avoid redundancy.
+    descendantAttributionsForTask.delete(attrId);
 
     // Only include attribution roots - i.e., entry points of a subtree
     // attributed to a particular source location - in the statistics. We need
@@ -88,11 +117,7 @@ function gatherStatistics(
     // if we accumulate the breakdowns from the subtree as well, we'll be
     // incorporating the same numbers into the statistics more than once and the
     // total will be too high.
-    const info = task.metadata.attributionInfo;
     if (!info.isRoot) { continue; }
-
-    const attrId = attributionId(info);
-    const taskId = task.metadata.taskId;
 
     // Update the cumulative statistics for this task's attributed location. Note
     // that we need to deep clone the attribution information when initializing
@@ -103,11 +128,16 @@ function gatherStatistics(
     if (!cumulativeStats) {
       cumulativeStatsMap.set(attrId, {
         attribution: cloneDeep(info),
+        descendantAttributions: [...descendantAttributionsForTask.values()],
         breakdown: cloneDeep(task.metadata.breakdown),
         taskIds: [taskId]
       });
     } else {
-      accumulateStatistics(cumulativeStats, task);
+      accumulateStatistics(
+        cumulativeStats,
+        descendantAttributionsForTask,
+        task
+      );
     }
 
     // Update the longest instance for this task's attributed location.
@@ -118,6 +148,7 @@ function gatherStatistics(
     ) {
       longestDurationStatsMap.set(attrId, {
         attribution: info,
+        descendantAttributions: [...descendantAttributionsForTask.values()],
         breakdown: task.metadata.breakdown,
         startTime: task.startTime,
         taskIds: [taskId]
@@ -127,11 +158,14 @@ function gatherStatistics(
     // Record the per-task statistics.
     taskStatsMap.set(taskId, {
       attribution: info,
+      descendantAttributions: [...descendantAttributionsForTask.values()],
       breakdown: task.metadata.breakdown,
       startTime: task.startTime,
       taskIds: [taskId]
     });
   }
+
+  return descendantAttributions;
 }
 
 export type Summary = {

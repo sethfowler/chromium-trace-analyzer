@@ -43,7 +43,11 @@ function showTiming(
   writer.log(`- Duration: `.bold + `${stats.breakdown.total}ms`.red);
 }
 
-function showHighlightedSource(writer: IndentingWriter, lines: string[]): void {
+function showHighlightedSource(
+  writer: IndentingWriter,
+  lines: string[],
+  brief: boolean = false
+): void {
   const highlighted = cliHighlight(lines.join('\n'), {
     language: 'typescript',
     ignoreIllegals: true
@@ -51,6 +55,12 @@ function showHighlightedSource(writer: IndentingWriter, lines: string[]): void {
 
   const highlightedLines = highlighted.split('\n');
   const targetLine = Math.floor(highlightedLines.length / 2);
+
+  if (brief) {
+    writer.log(`-> `.white + highlightedLines[targetLine]);
+    return;
+  }
+
   highlightedLines.forEach((line, lineNumber) => {
     if (lineNumber === targetLine) {
       writer.log(`-> `.white + line);
@@ -62,14 +72,15 @@ function showHighlightedSource(writer: IndentingWriter, lines: string[]): void {
 
 function showAttribution(
   writer: IndentingWriter,
-  info: AttributionInfo
+  info: AttributionInfo,
+  brief: boolean = false
 ): void {
   switch (info.kind) {
     case 'sourceLocation':
       writer.log(`- ${info.url} (${info.lineNumber}:${info.columnNumber})`.white);
       writer.withIndent(() => {
         if (info.sourceLines) {
-          showHighlightedSource(writer, info.sourceLines);
+          showHighlightedSource(writer, info.sourceLines, brief);
         } else if (info.functionName && info.functionName !== '') {
           writer.log(`-> `.white + `${info.functionName}()`.bold);
         }
@@ -96,7 +107,7 @@ function showTriggers(
 ): void {
   const triggers = info.triggers.filter(t => t !== 'RunTask');
   if (triggers.length > 0) {
-    writer.log(`- Triggers:`.bold);
+    writer.log(`- Triggered by:`.bold);
     writer.withIndent(() => {
       for (const trigger of triggers) {
         writer.log(`- ${trigger}`);
@@ -143,6 +154,15 @@ export function showPrettySummary(
             const duration = longestInstance.breakdown.total;
             writer.log(`- Duration: `.bold + `${duration}ms`.red);
             showTriggers(writer, longestInstance.attribution);
+          });
+        }
+
+        if (stats.descendantAttributions.length > 0) {
+          writer.log(`- Invokes:`.bold);
+          writer.withIndent(() => {
+            for (const descendant of stats.descendantAttributions) {
+              showAttribution(writer, descendant, /* brief = */ true);
+            }
           });
         }
       });
