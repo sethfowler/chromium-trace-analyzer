@@ -33,6 +33,16 @@ class IndentingWriter {
   }
 }
 
+function showTiming(
+  writer: IndentingWriter,
+  stats: AttributionStatistics
+): void {
+  if (stats.startTime !== undefined) {
+    writer.log(`- Start time: `.bold + `${stats.startTime}ms`);
+  }
+  writer.log(`- Duration: `.bold + `${stats.breakdown.total}ms`.red);
+}
+
 function showHighlightedSource(writer: IndentingWriter, lines: string[]): void {
   const highlighted = cliHighlight(lines.join('\n'), {
     language: 'typescript',
@@ -80,6 +90,21 @@ function showAttribution(
   }
 };
 
+function showTriggers(
+  writer: IndentingWriter,
+  info: AttributionInfo
+): void {
+  const triggers = info.triggers.filter(t => t !== 'RunTask');
+  if (triggers.length > 0) {
+    writer.log(`- Triggers:`.bold);
+    writer.withIndent(() => {
+      for (const trigger of triggers) {
+        writer.log(`- ${trigger}`);
+      }
+    });
+  }
+}
+
 export function showPrettySummary(
   title: string,
   entries: AttributionStatistics[]
@@ -95,7 +120,7 @@ export function showPrettySummary(
       showAttribution(writer, stats.attribution);
 
       writer.withIndent(() => {
-        writer.log(`- Duration: `.bold + `${stats.breakdown.total}ms`.red);
+        showTiming(writer, stats);
 
         writer.log(`- Breakdown:`.bold);
         writer.withIndent(() => {
@@ -106,13 +131,18 @@ export function showPrettySummary(
           }
         });
 
-        const triggers = stats.attribution.triggers.filter(t => t !== 'RunTask');
-        if (triggers.length > 0) {
-          writer.log(`- Triggers:`.bold);
+        showTriggers(writer, stats.attribution);
+
+        if (
+          stats.longestInstance &&
+          stats.longestInstance.breakdown.total !== stats.breakdown.total
+        ) {
+          const longestInstance = stats.longestInstance;
+          writer.log(`- Longest instance:`.bold);
           writer.withIndent(() => {
-            for (const trigger of triggers) {
-              writer.log(`- ${trigger}`);
-            }
+            const duration = longestInstance.breakdown.total;
+            writer.log(`- Duration: `.bold + `${duration}ms`.red);
+            showTriggers(writer, longestInstance.attribution);
           });
         }
       });

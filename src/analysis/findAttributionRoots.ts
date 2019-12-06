@@ -22,6 +22,8 @@ function assignAttributionRoots(
         attrId
       );
       task.metadata.attributionInfo.isRoot = true;
+    } else {
+      task.metadata.attributionInfo.isRoot = false;
     }
 
     // Visit the children with this task's attribution root added to the stack.

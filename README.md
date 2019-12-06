@@ -25,7 +25,8 @@ npm install -g @sethfowler/chromium-trace-analyzer
 
 ## Usage
 
-To get a quick summary of the hottest tasks in the trace:
+To get a quick summary of the hottest tasks in the trace from several
+perspectives:
 ```bash
 chromium-trace-analyzer --trace profile.json
 ```
@@ -35,17 +36,23 @@ To see more tasks:
 chromium-trace-analyzer --trace profile.json --top 20
 ```
 
-To focus on tasks related to a specific script, use `--taskFilter` and pass a
+To see only a specific summary (`--help` will give you the full list of summary
+names):
+```bash
+chromium-trace-analyzer --trace profile.json --summary cumulative
+```
+
+To focus on tasks related to a specific script, use `--scriptFilter` and pass a
 substring of the script URL:
 ```bash
-chromium-trace-analyzer --trace profile.json --taskFilter foo.js
+chromium-trace-analyzer --trace profile.json --scriptFilter foo.js
 ```
 
 You can filter using either the original URL or the URL after source maps have
 been applied. You can also optionally specify a line number, which can be used
 to filter out everything but a specific function:
 ```bash
-chromium-trace-analyzer --trace profile.json --taskFilter original.js:123
+chromium-trace-analyzer --trace profile.json --scriptFilter original.js:123
 ```
 
 To enable source maps, you need to specify three things:

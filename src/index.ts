@@ -21,6 +21,8 @@ function filterParentValues(key: string, value: string): string | null {
 }
 
 export async function main() {
+  const summaryNames = ['cumulative', 'longest', 'tasks', 'all', 'none'];
+
   args
     .option(
       '--debug',
@@ -45,16 +47,21 @@ export async function main() {
       []
     )
     .option(
-      '--taskFilter <urlPattern:line?>',
+      '--scriptFilter <urlPattern:line?>',
       `Filter out tasks not related to URLs containing urlPattern. An optional ` +
       `source line can be specified to filter out everything except one ` +
       `source location.`
     )
     .option(
-      '--taskFilterType <fine|coarse>',
-      `Whether to filter tasks aggressively (fine) or to include nearby tasks ` +
-      `as well (coarse).`,
+      '--scriptFilterType <fine|coarse>',
+      `Whether to include only tasks that match the filter (fine) or to include ` +
+      `nearby tasks as well (coarse).`,
       'fine'
+    )
+    .option(
+      `--summary <${summaryNames.join('|')}>`,
+      `Which summary to display.`,
+      'all'
     )
     .option(
       '--top <N>',
@@ -107,30 +114,30 @@ export async function main() {
   console.log(`Computing breakdowns...`.green);
   computeBreakdowns(trace);
 
-  const taskFilterType = args.taskFilterType;
-  if (taskFilterType !== 'fine' && taskFilterType !== 'coarse') {
-    console.error(`--taskFilterType must be 'fine' or 'coarse'`);
+  const scriptFilterType = args.scriptFilterType;
+  if (scriptFilterType !== 'fine' && scriptFilterType !== 'coarse') {
+    console.error(`--scriptFilterType must be 'fine' or 'coarse'`);
     process.exit(1);
   }
 
-  if (args.taskFilter) {
-    const [urlPattern, line] = args.taskFilter.split(':');
+  if (args.scriptFilter) {
+    const [urlPattern, line] = args.scriptFilter.split(':');
     const lineNumber = line === undefined ? undefined : Number(line);
     if (lineNumber !== undefined && Number.isNaN(lineNumber)) {
-      console.error(`--taskFilter line number must be numeric`);
+      console.error(`--scriptFilter line number must be numeric`);
       process.exit(1);
     }
 
     const position = lineNumber === undefined ? '' : `:${lineNumber}`;
     console.log(
-      `Applying ${taskFilterType} filter for ${urlPattern}${position}...`.green
+      `Applying ${scriptFilterType} filter for ${urlPattern}${position}...`.green
     );
-    filterTasksByUrlPattern(trace, taskFilterType, urlPattern, lineNumber);
+    filterTasksByUrlPattern(trace, scriptFilterType, urlPattern, lineNumber);
   }
 
   console.log(`Summarizing...`.green);
-  const summary = taskFilterType === 'fine'
-    ? summarize(trace, args.taskFilter)
+  const summary = scriptFilterType === 'fine'
+    ? summarize(trace, args.scriptFilter)
     : summarize(trace);
 
   if (args.outputJsonTrace && args.outputJsonSummary === args.outputJsonTrace) {
@@ -172,17 +179,35 @@ export async function main() {
     process.exit(1);
   }
 
-  console.log();
-  console.log();
-  showPrettySummary(
-    `Top ${topCount} Source Locations by Cumulative Duration`,
-    summary.byAttribution.byCumulativeDuration.slice(0, topCount)
-  );
+  if (!summaryNames.includes(args.summary)) {
+    console.error(`Unknown --summary '${args.summary}'`);
+    process.exit(1);
+  }
 
-  console.log();
-  console.log();
-  showPrettySummary(
-    `Top ${topCount} Source Locations by Longest Instance Duration`,
-    summary.byAttribution.byLongestInstanceDuration.slice(0, topCount)
-  );
+  if (['cumulative', 'all'].includes(args.summary)) {
+    console.log();
+    console.log();
+    showPrettySummary(
+      `Top ${topCount} Source Locations by Cumulative Duration`,
+      summary.byAttribution.byCumulativeDuration.slice(0, topCount)
+    );
+  }
+
+  if (['longest', 'all'].includes(args.summary)) {
+    console.log();
+    console.log();
+    showPrettySummary(
+      `Top ${topCount} Source Locations by Longest Instance Duration`,
+      summary.byAttribution.byLongestInstanceDuration.slice(0, topCount)
+    );
+  }
+
+  if (['tasks', 'all'].includes(args.summary)) {
+    console.log();
+    console.log();
+    showPrettySummary(
+      `Top ${topCount} Tasks by Duration`,
+      summary.byTaskDuration.slice(0, topCount)
+    );
+  }
 }

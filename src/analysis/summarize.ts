@@ -17,14 +17,25 @@ import { HasTaskId, TaskTrace, TaskWithData } from '../taskgraph';
 // Data about how the time associated with a particular attribution is being
 // spent, and which tasks that data came from.
 export type AttributionStatistics = {
-  attribution: AttributionInfo;
-  breakdown: Breakdown;
-  taskIds: number[];
-};
+  // The source location these statistics are for. This may be a merged version
+  // of the attribution from multiple tasks.
+  attribution: Readonly<AttributionInfo>;
 
-export type SummaryByAttribution = {
-  byCumulativeDuration: AttributionStatistics[];
-  byLongestInstanceDuration: AttributionStatistics[];
+  // A breakdown of how the time associated with the source location is being
+  // spent.
+  breakdown: Breakdown;
+
+  // The tasks that contributed to the breakdown.
+  taskIds: number[];
+
+  // If present, the time that the associated task started. (This won't be
+  // present for cumulative statistics, since it doesn't make sense in that
+  // context.)
+  startTime?: number;
+
+  // If present, the longest single instance that contributed to these
+  // statistics.
+  longestInstance?: AttributionStatistics;
 };
 
 // Accumulate the statistics from a new task into an existing set of statistics.
@@ -59,6 +70,7 @@ function accumulateStatistics(
 function gatherStatistics(
   cumulativeStatsMap: Map<string, AttributionStatistics>,
   longestDurationStatsMap: Map<string, AttributionStatistics>,
+  taskStatsMap: Map<number, AttributionStatistics>,
   tasks: TaskWithData<HasAttributionInfo & HasBreakdown & HasTaskId>[]
 ): void {
   for (const task of tasks) {
@@ -66,6 +78,7 @@ function gatherStatistics(
     gatherStatistics(
       cumulativeStatsMap,
       longestDurationStatsMap,
+      taskStatsMap,
       task.children
     );
 
@@ -106,66 +119,97 @@ function gatherStatistics(
       longestDurationStatsMap.set(attrId, {
         attribution: info,
         breakdown: task.metadata.breakdown,
+        startTime: task.startTime,
         taskIds: [taskId]
       });
     }
+
+    // Record the per-task statistics.
+    taskStatsMap.set(taskId, {
+      attribution: info,
+      breakdown: task.metadata.breakdown,
+      startTime: task.startTime,
+      taskIds: [taskId]
+    });
   }
 }
 
-export function createSummaryByAttribution(
+export type Summary = {
+  byAttribution: {
+    byCumulativeDuration: AttributionStatistics[];
+    byLongestInstanceDuration: AttributionStatistics[];
+  };
+  byTaskDuration: AttributionStatistics[];
+
+  // TODO: It might be interesting to provide statistics for bucketed chunks of
+  // the timeline so we could distinguish between things that take a lot of time
+  // during initialization and things that take a lot of time during the steady
+  // state.
+  byTimelineBuckets: [];
+};
+
+export function createSummary(
   trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasTaskId, {}>,
   scriptUrlPattern?: string
-): SummaryByAttribution {
+): Summary {
+  // Statistics that we track per-source-location. The key is an identifier that
+  // maps to a particular source location (or attribution, at least).
   const cumulativeStatsMap = new Map<string, AttributionStatistics>();
   const longestDurationStatsMap = new Map<string, AttributionStatistics>();
 
-  gatherStatistics(cumulativeStatsMap, longestDurationStatsMap, trace.tasks);
+  // Per-task statistics. The key is a task id.
+  const taskStatsMap = new Map<number, AttributionStatistics>();
+
+  gatherStatistics(
+    cumulativeStatsMap,
+    longestDurationStatsMap,
+    taskStatsMap,
+    trace.tasks
+  );
+
+  // Attach longest instances to the cumulative statistics.
+  for (const [attrId, stats] of cumulativeStatsMap.entries()) {
+    const longestDurationStats = longestDurationStatsMap.get(attrId);
+    if (longestDurationStats) {
+      stats.longestInstance = longestDurationStats;
+    }
+  }
 
   // Sort the results from largest to smallest durations.
   let byCumulativeDuration = [...cumulativeStatsMap.values()]
     .sort((a, b) => b.breakdown.total - a.breakdown.total);
   let byLongestInstanceDuration = [...longestDurationStatsMap.values()]
     .sort((a, b) => b.breakdown.total - a.breakdown.total);
+  let byTaskDuration = [...taskStatsMap.values()]
+    .sort((a, b) => b.breakdown.total - a.breakdown.total);
 
   // Filter the results by URL pattern if the caller requested it.
-  if (scriptUrlPattern && scriptUrlPattern.includes('nope')) {
+  if (scriptUrlPattern) {
     byCumulativeDuration = byCumulativeDuration.filter(task =>
       isAttributedTo(task.attribution, scriptUrlPattern)
     );
     byLongestInstanceDuration = byLongestInstanceDuration.filter(task =>
       isAttributedTo(task.attribution, scriptUrlPattern)
     );
+    byTaskDuration = byTaskDuration.filter(task =>
+      isAttributedTo(task.attribution, scriptUrlPattern)
+    );
   }
 
-  return { byCumulativeDuration, byLongestInstanceDuration };
+  return {
+    byAttribution: {
+      byCumulativeDuration,
+      byLongestInstanceDuration,
+    },
+    byTaskDuration,
+    byTimelineBuckets: [],
+  };
 }
-
-export type SummaryByTimelineBuckets = {
-};
-
-// TODO: It might be interesting to provide statistics for bucketed chunks of
-// the timeline so we could distinguish between things that take a lot of time
-// during initialization and things that take a lot of time during the steady
-// state.
-export function createSummaryByTimelineBuckets(
-  _trace: TaskTrace<HasTaskId & HasAttributionInfo, {}>
-): SummaryByTimelineBuckets {
-  return {};
-}
-
-export type Summary = {
-  byAttribution: SummaryByAttribution;
-  byTimelineBuckets: SummaryByTimelineBuckets;
-};
 
 export function summarize(
   trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasTaskId, {}>,
   scriptUrlPattern?: string
 ): Summary {
   log.debug(`Starting summarize pass.`);
-
-  return {
-    byAttribution: createSummaryByAttribution(trace, scriptUrlPattern),
-    byTimelineBuckets: createSummaryByTimelineBuckets(trace)
-  };
+  return createSummary(trace, scriptUrlPattern);
 }
