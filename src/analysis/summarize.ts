@@ -14,6 +14,11 @@ import {
 import { log } from '../log';
 import { HasTaskId, TaskTrace, TaskWithData } from '../taskgraph';
 
+type DescendantBreakdown = {
+  attribution: Readonly<AttributionInfo>;
+  breakdown: Breakdown;
+};
+
 // Data about how the time associated with a particular attribution is being
 // spent, and which tasks that data came from.
 export type AttributionStatistics = {
@@ -21,12 +26,13 @@ export type AttributionStatistics = {
   // of the attribution from multiple tasks.
   attribution: Readonly<AttributionInfo>;
 
-  // All attributions for descendant tasks.
-  descendantAttributions: Readonly<AttributionInfo>[];
-
   // A breakdown of how the time associated with the source location is being
   // spent.
   breakdown: Breakdown;
+
+  // Breakdowns for descendant tasks.
+  // TODO: Compute these in a separate pass.
+  descendantBreakdowns: Map<string, DescendantBreakdown>;
 
   // The tasks that contributed to the breakdown.
   taskIds: number[];
@@ -44,7 +50,7 @@ export type AttributionStatistics = {
 // Accumulate the statistics from a new task into an existing set of statistics.
 function accumulateStatistics(
   stats: AttributionStatistics,
-  descendantAttributions: Map<string, AttributionInfo>,
+  descendantBreakdowns: Map<string, DescendantBreakdown>,
   task: TaskWithData<HasAttributionInfo & HasBreakdown & HasTaskId>
 ): void {
   stats.breakdown = sumOfBreakdowns(
@@ -70,14 +76,26 @@ function accumulateStatistics(
     stats.taskIds.push(task.metadata.taskId);
   }
 
-  const existingDescendantAttrs = new Set<string>(
-    stats.descendantAttributions.map(attributionId)
-  );
-  for (const [attrId, attr] of descendantAttributions.entries()) {
-    if (!existingDescendantAttrs.has(attrId)) {
-      stats.descendantAttributions.push(attr);
-    }
+  for (const [attrId, breakdown] of descendantBreakdowns.entries()) {
+    mergeDescendantBreakdowns(stats.descendantBreakdowns, attrId, breakdown);
   }
+}
+
+function mergeDescendantBreakdowns(
+  descendantBreakdowns: Map<string, DescendantBreakdown>,
+  toMergeAttrId: string,
+  toMerge: DescendantBreakdown
+): void {
+  const existing = descendantBreakdowns.get(toMergeAttrId);
+  if (existing) {
+    existing.breakdown = sumOfBreakdowns(
+      existing.breakdown,
+      toMerge.breakdown
+    );
+    return;
+  }
+
+  descendantBreakdowns.set(toMergeAttrId, toMerge);
 }
 
 function gatherStatistics(
@@ -85,12 +103,12 @@ function gatherStatistics(
   longestDurationStatsMap: Map<string, AttributionStatistics>,
   taskStatsMap: Map<number, AttributionStatistics>,
   tasks: TaskWithData<HasAttributionInfo & HasBreakdown & HasTaskId>[]
-): Map<string, AttributionInfo> {
-  const descendantAttributions = new Map<string, AttributionInfo>();
+): Map<string, DescendantBreakdown> {
+  const descendantBreakdowns = new Map<string, DescendantBreakdown>();
 
   for (const task of tasks) {
     // Gather statistics for all child tasks.
-    const descendantAttributionsForTask = gatherStatistics(
+    const descendantBreakdownsForTask = gatherStatistics(
       cumulativeStatsMap,
       longestDurationStatsMap,
       taskStatsMap,
@@ -102,14 +120,19 @@ function gatherStatistics(
     const taskId = task.metadata.taskId;
 
     // Propagate descendant attributions up the tree.
-    descendantAttributions.set(attrId, cloneDeep(info));
-    for (const [attrId, attr] of descendantAttributionsForTask.entries()) {
-      descendantAttributions.set(attrId, attr);
+    if (info.isRoot) {
+      mergeDescendantBreakdowns(descendantBreakdowns, attrId, {
+        attribution: cloneDeep(info),
+        breakdown: cloneDeep(task.metadata.breakdown)
+      });
     }
-
-    // Remove this task from its set of descendant attributions. This is just to
-    // avoid redundancy.
-    descendantAttributionsForTask.delete(attrId);
+    for (const [attrId, breakdown] of descendantBreakdownsForTask.entries()) {
+      mergeDescendantBreakdowns(
+        descendantBreakdowns,
+        attrId,
+        cloneDeep(breakdown)
+      );
+    }
 
     // Only include attribution roots - i.e., entry points of a subtree
     // attributed to a particular source location - in the statistics. We need
@@ -128,14 +151,14 @@ function gatherStatistics(
     if (!cumulativeStats) {
       cumulativeStatsMap.set(attrId, {
         attribution: cloneDeep(info),
-        descendantAttributions: [...descendantAttributionsForTask.values()],
+        descendantBreakdowns: cloneDeep(descendantBreakdownsForTask),
         breakdown: cloneDeep(task.metadata.breakdown),
         taskIds: [taskId]
       });
     } else {
       accumulateStatistics(
         cumulativeStats,
-        descendantAttributionsForTask,
+        descendantBreakdownsForTask,
         task
       );
     }
@@ -148,7 +171,7 @@ function gatherStatistics(
     ) {
       longestDurationStatsMap.set(attrId, {
         attribution: info,
-        descendantAttributions: [...descendantAttributionsForTask.values()],
+        descendantBreakdowns: descendantBreakdownsForTask,
         breakdown: task.metadata.breakdown,
         startTime: task.startTime,
         taskIds: [taskId]
@@ -158,14 +181,18 @@ function gatherStatistics(
     // Record the per-task statistics.
     taskStatsMap.set(taskId, {
       attribution: info,
-      descendantAttributions: [...descendantAttributionsForTask.values()],
+      descendantBreakdowns: descendantBreakdownsForTask,
       breakdown: task.metadata.breakdown,
       startTime: task.startTime,
       taskIds: [taskId]
     });
   }
 
-  return descendantAttributions;
+  for (const [attrId, breakdown] of descendantBreakdowns.entries()) {
+    log.info(`Descendant breakdown for ${attrId}: ${JSON.stringify(breakdown)}`);
+  }
+
+  return descendantBreakdowns;
 }
 
 export type Summary = {

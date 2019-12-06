@@ -1,4 +1,4 @@
-import {  HasAttributionInfo } from '../attributions';
+import { HasAttributionInfo } from '../attributions';
 import {
   Breakdown,
   HasBreakdown,

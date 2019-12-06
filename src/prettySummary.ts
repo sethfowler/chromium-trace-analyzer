@@ -70,17 +70,27 @@ function showHighlightedSource(
   });
 }
 
+type ShowAttributionOptions = {
+  brief?: boolean;
+  extraMetadata?: string;
+};
+
 function showAttribution(
   writer: IndentingWriter,
   info: AttributionInfo,
-  brief: boolean = false
+  options: ShowAttributionOptions = {}
 ): void {
+  const extra = options.extraMetadata ? ` (${options.extraMetadata})` : '';
+
   switch (info.kind) {
     case 'sourceLocation':
-      writer.log(`- ${info.url} (${info.lineNumber}:${info.columnNumber})`.white);
+      writer.log(
+        `- ${info.url} (${info.lineNumber}:${info.columnNumber})${extra}`.white
+      );
+
       writer.withIndent(() => {
         if (info.sourceLines) {
-          showHighlightedSource(writer, info.sourceLines, brief);
+          showHighlightedSource(writer, info.sourceLines, options.brief ?? false);
         } else if (info.functionName && info.functionName !== '') {
           writer.log(`-> `.white + `${info.functionName}()`.bold);
         }
@@ -88,11 +98,11 @@ function showAttribution(
       return;
 
     case 'file':
-      writer.log(`- ` + info.url.white);
+      writer.log(`- ` + `${info.url}${extra}`.white);
       return;
 
     case 'unknown':
-      writer.log(`- ` + `unknown`.white);
+      writer.log(`- ` + `unknown${extra}`.white);
       return;
 
     default:
@@ -144,6 +154,22 @@ export function showPrettySummary(
 
         showTriggers(writer, stats.attribution);
 
+        if (stats.descendantBreakdowns.size > 0) {
+          writer.log(`- Invokes:`.bold);
+          writer.withIndent(() => {
+            const total = stats.breakdown.total;
+            for (const descendant of stats.descendantBreakdowns.values()) {
+              const duration = descendant.breakdown.total;
+              const percentage = (duration / total) * 100;
+              showAttribution(writer, descendant.attribution, {
+                brief: true,
+                extraMetadata:
+                  `${percentage.toPrecision(3)}% - ${duration.toPrecision(3)}ms`
+              });
+            }
+          });
+        }
+
         if (
           stats.longestInstance &&
           stats.longestInstance.breakdown.total !== stats.breakdown.total
@@ -154,15 +180,6 @@ export function showPrettySummary(
             const duration = longestInstance.breakdown.total;
             writer.log(`- Duration: `.bold + `${duration}ms`.red);
             showTriggers(writer, longestInstance.attribution);
-          });
-        }
-
-        if (stats.descendantAttributions.length > 0) {
-          writer.log(`- Invokes:`.bold);
-          writer.withIndent(() => {
-            for (const descendant of stats.descendantAttributions) {
-              showAttribution(writer, descendant, /* brief = */ true);
-            }
           });
         }
       });
