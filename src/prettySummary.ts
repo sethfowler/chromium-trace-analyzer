@@ -143,15 +143,16 @@ export function showPrettySummary(
     for (const stats of entries) {
       writer.log();
 
-      showAttribution(writer, stats.attribution);
+      showAttribution(writer, stats.attribution, {
+        extraMetadata: stats.taskIds.length === 1 ? `task ${stats.taskIds[0]}` : '',
+      });
 
       writer.withIndent(() => {
         showTiming(writer, stats);
 
         writer.log(`- Breakdown:`.bold);
         writer.withIndent(() => {
-          for (const [kind, duration] of Object.entries(stats.breakdown)) {
-            if (kind === 'total') { continue; }
+          for (const [kind, duration] of stats.breakdown.entries()) {
             if (duration === 0) { continue; }
             writer.log(`- ${kind}: ` + `${round(duration)}ms`.red);
           }
@@ -159,14 +160,17 @@ export function showPrettySummary(
 
         showTriggers(writer, stats.context);
 
-        if (stats.descendantBreakdowns.size > 0) {
-          writer.log(`- Invokes:`.bold);
+        if (stats.breakdownsByAttribution.size > 1) {
+          writer.log(`- Breakdown by attribution:`.bold);
           writer.withIndent(() => {
             const total = stats.breakdown.total;
-            for (const descendant of stats.descendantBreakdowns.values()) {
-              const duration = descendant.breakdown.total;
+            const entries = [...stats.breakdownsByAttribution.entries()]
+              .sort(([_aK, aV], [_bK, bV]) => bV.total - aV.total);
+            for (const [attr, breakdown] of entries) {
+              if (attr === stats.attribution) { continue; }
+              const duration = breakdown.total;
               const percentage = (duration / total) * 100;
-              showAttribution(writer, descendant.attribution, {
+              showAttribution(writer, attr, {
                 brief: true,
                 extraMetadata:
                   `${round(percentage)}% - ${round(duration)}ms`

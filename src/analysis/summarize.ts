@@ -1,7 +1,6 @@
 import cloneDeep from 'clone-deep';
 
 import {
-  attributionId,
   Attribution,
   AttributionContext,
   HasAttributionInfo,
@@ -10,21 +9,16 @@ import {
 import {
   Breakdown,
   HasBreakdown,
+  mergeBreakdownsByAttribution,
   sumOfBreakdowns
 } from '../breakdowns';
 import { log } from '../log';
 import { HasTaskId, TaskTrace, TaskWithData } from '../taskgraph';
 
-type DescendantBreakdown = {
-  attribution: Attribution;
-  breakdown: Breakdown;
-};
-
 // Data about how the time associated with a particular attribution is being
 // spent, and which tasks that data came from.
 export type AttributionStatistics = {
-  // The source location these statistics are for. This may be a merged version
-  // of the attribution from multiple tasks.
+  // The source location these statistics are for.
   attribution: Attribution;
   context: AttributionContext;
 
@@ -33,8 +27,7 @@ export type AttributionStatistics = {
   breakdown: Breakdown;
 
   // Breakdowns for descendant tasks.
-  // TODO: Compute these in a separate pass.
-  descendantBreakdowns: Map<string, DescendantBreakdown>;
+  breakdownsByAttribution: Map<Attribution, Breakdown>;
 
   // The tasks that contributed to the breakdown.
   taskIds: number[];
@@ -52,7 +45,6 @@ export type AttributionStatistics = {
 // Accumulate the statistics from a new task into an existing set of statistics.
 function accumulateStatistics(
   stats: AttributionStatistics,
-  descendantBreakdowns: Map<string, DescendantBreakdown>,
   task: TaskWithData<HasAttributionInfo & HasBreakdown & HasTaskId>
 ): void {
   stats.breakdown = sumOfBreakdowns(
@@ -78,39 +70,21 @@ function accumulateStatistics(
     stats.taskIds.push(task.metadata.taskId);
   }
 
-  for (const [attrId, breakdown] of descendantBreakdowns.entries()) {
-    mergeDescendantBreakdowns(stats.descendantBreakdowns, attrId, breakdown);
-  }
-}
-
-function mergeDescendantBreakdowns(
-  descendantBreakdowns: Map<string, DescendantBreakdown>,
-  toMergeAttrId: string,
-  toMerge: DescendantBreakdown
-): void {
-  const existing = descendantBreakdowns.get(toMergeAttrId);
-  if (existing) {
-    existing.breakdown = sumOfBreakdowns(
-      existing.breakdown,
-      toMerge.breakdown
-    );
-    return;
-  }
-
-  descendantBreakdowns.set(toMergeAttrId, toMerge);
+  mergeBreakdownsByAttribution(
+    stats.breakdownsByAttribution,
+    task.metadata.breakdownsByAttribution
+  );
 }
 
 function gatherStatistics(
-  cumulativeStatsMap: Map<string, AttributionStatistics>,
-  longestDurationStatsMap: Map<string, AttributionStatistics>,
+  cumulativeStatsMap: Map<Attribution, AttributionStatistics>,
+  longestDurationStatsMap: Map<Attribution, AttributionStatistics>,
   taskStatsMap: Map<number, AttributionStatistics>,
   tasks: TaskWithData<HasAttributionInfo & HasBreakdown & HasTaskId>[]
-): Map<string, DescendantBreakdown> {
-  const descendantBreakdowns = new Map<string, DescendantBreakdown>();
-
+): void {
   for (const task of tasks) {
     // Gather statistics for all child tasks.
-    const descendantBreakdownsForTask = gatherStatistics(
+    gatherStatistics(
       cumulativeStatsMap,
       longestDurationStatsMap,
       taskStatsMap,
@@ -119,64 +93,44 @@ function gatherStatistics(
 
     const attribution = task.metadata.attribution;
     const context = task.metadata.context;
-    const attrId = attributionId(attribution);
     const taskId = task.metadata.taskId;
 
-    // Propagate descendant attributions up the tree.
+    // Update the cumulative statistics for this task's attributed location.
+    //
+    // We only include attribution roots - i.e., entry points of a subtree
+    // attributed to a particular source location - in the cumulative
+    // statistics. We need to do this because each task's breakdown includes its
+    // entire subtree, so if we accumulate the breakdowns from the subtree as
+    // well, we'll be incorporating the same numbers into the statistics more
+    // than once and the total will be too high.
+    //
+    // Note also that deep cloning is needed here since we mutate some of these
+    // data structures in accumulateStatistics().
     if (context.isAttributionRoot) {
-      mergeDescendantBreakdowns(descendantBreakdowns, attrId, {
-        attribution,
-        breakdown: cloneDeep(task.metadata.breakdown)
-      });
-    }
-    for (const [attrId, breakdown] of descendantBreakdownsForTask.entries()) {
-      mergeDescendantBreakdowns(
-        descendantBreakdowns,
-        attrId,
-        cloneDeep(breakdown)
-      );
-    }
-
-    // Only include attribution roots - i.e., entry points of a subtree
-    // attributed to a particular source location - in the statistics. We need
-    // to do this because each task's breakdown includes its entire subtree, so
-    // if we accumulate the breakdowns from the subtree as well, we'll be
-    // incorporating the same numbers into the statistics more than once and the
-    // total will be too high.
-    if (!context.isAttributionRoot) { continue; }
-
-    // Update the cumulative statistics for this task's attributed location. Note
-    // that we need to deep clone the attribution information when initializing
-    // the statistics for a task for the first time; accumulateStatistics() will
-    // end up mutating those values, and we don't want those mutations to get
-    // propagated to the task graph.
-    const cumulativeStats = cumulativeStatsMap.get(attrId);
-    if (!cumulativeStats) {
-      cumulativeStatsMap.set(attrId, {
-        attribution,
-        context,
-        descendantBreakdowns: cloneDeep(descendantBreakdownsForTask),
-        breakdown: cloneDeep(task.metadata.breakdown),
-        taskIds: [taskId]
-      });
-    } else {
-      accumulateStatistics(
-        cumulativeStats,
-        descendantBreakdownsForTask,
-        task
-      );
+      const cumulativeStats = cumulativeStatsMap.get(attribution);
+      if (!cumulativeStats) {
+        cumulativeStatsMap.set(attribution, {
+          attribution,
+          context: cloneDeep(context),
+          breakdownsByAttribution: cloneDeep(task.metadata.breakdownsByAttribution),
+          breakdown: cloneDeep(task.metadata.breakdown),
+          taskIds: [taskId]
+        });
+      } else {
+        accumulateStatistics(cumulativeStats, task);
+      }
     }
 
     // Update the longest instance for this task's attributed location.
-    const longestDurationStats = longestDurationStatsMap.get(attrId);
+    const longestDurationStats = longestDurationStatsMap.get(attribution);
     if (
       !longestDurationStats ||
       task.metadata.breakdown.total > longestDurationStats.breakdown.total
     ) {
-      longestDurationStatsMap.set(attrId, {
+      longestDurationStatsMap.set(attribution, {
         attribution,
         context,
-        descendantBreakdowns: descendantBreakdownsForTask,
+        breakdownsByAttribution: task.metadata.breakdownsByAttribution,
         breakdown: task.metadata.breakdown,
         startTime: task.startTime,
         taskIds: [taskId]
@@ -187,14 +141,12 @@ function gatherStatistics(
     taskStatsMap.set(taskId, {
       attribution,
       context,
-      descendantBreakdowns: descendantBreakdownsForTask,
+      breakdownsByAttribution: task.metadata.breakdownsByAttribution,
       breakdown: task.metadata.breakdown,
       startTime: task.startTime,
       taskIds: [taskId]
     });
   }
-
-  return descendantBreakdowns;
 }
 
 export type Summary = {
@@ -215,10 +167,9 @@ export function createSummary(
   trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasTaskId, {}>,
   scriptUrlPattern?: string
 ): Summary {
-  // Statistics that we track per-source-location. The key is an identifier that
-  // maps to a particular source location (or attribution, at least).
-  const cumulativeStatsMap = new Map<string, AttributionStatistics>();
-  const longestDurationStatsMap = new Map<string, AttributionStatistics>();
+  // Statistics that we track per-source-location.
+  const cumulativeStatsMap = new Map<Attribution, AttributionStatistics>();
+  const longestDurationStatsMap = new Map<Attribution, AttributionStatistics>();
 
   // Per-task statistics. The key is a task id.
   const taskStatsMap = new Map<number, AttributionStatistics>();
@@ -231,8 +182,8 @@ export function createSummary(
   );
 
   // Attach longest instances to the cumulative statistics.
-  for (const [attrId, stats] of cumulativeStatsMap.entries()) {
-    const longestDurationStats = longestDurationStatsMap.get(attrId);
+  for (const [attr, stats] of cumulativeStatsMap.entries()) {
+    const longestDurationStats = longestDurationStatsMap.get(attr);
     if (longestDurationStats) {
       stats.longestInstance = longestDurationStats;
     }

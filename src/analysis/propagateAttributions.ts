@@ -190,9 +190,24 @@ function propagateByScope(
 // tasks in the sequence.
 function propagateBySequence(
   attributionMap: AttributionMap,
+  parent: TaskWithData<HasAttributionInfo & HasTaskId> | undefined,
   tasks: TaskWithData<HasAttributionInfo & HasTaskId>[]
 ): boolean {
   let changed = false;
+
+  // Process the child tasks.
+  for (const task of tasks) {
+    const changedViaChildren = propagateBySequence(
+      attributionMap,
+      task,
+      task.children
+    );
+    changed = changed || changedViaChildren;
+  }
+
+  if (!parent) {
+    return changed;  // Don't propagate by sequence for top-level tasks.
+  }
 
   let tasksWithSameScript: TaskWithData<HasAttributionInfo & HasTaskId>[] = [];
   let scriptUrl: string | undefined;
@@ -236,12 +251,6 @@ function propagateBySequence(
     changed = changed || changedViaSequencePropagation;
   }
 
-  // Process the child tasks.
-  for (const task of tasks) {
-    const changedViaChildren = propagateBySequence(attributionMap, task.children);
-    changed = changed || changedViaChildren;
-  }
-
   return changed;
 }
 
@@ -264,6 +273,7 @@ export function propagateAttributions(
     );
     const changedViaSequence = propagateBySequence(
       trace.metadata.attributionMap,
+      undefined,
       trace.tasks
     );
 

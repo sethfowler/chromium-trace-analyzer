@@ -15,8 +15,10 @@ import { log } from './log';
 import { showPrettySummary } from './prettySummary';
 import { readFileAsJson } from './util';
 
-function filterParentValues(key: string, value: string): string | null {
-  if (key === 'parent') { return null; }
+function filterParentValues(key: string, value: any): string | null {
+  if (key === 'parent') {
+    return value?.metadata?.taskId;
+  }
   return value;
 }
 
