@@ -1,7 +1,7 @@
 import 'colors';
 import cliHighlight from 'cli-highlight';
 
-import { AttributionInfo } from './attributions';
+import { Attribution, AttributionContext } from './attributions';
 import { AttributionStatistics } from './analysis/summarize';
 
 class IndentingWriter {
@@ -50,7 +50,7 @@ function showTiming(
 
 function showHighlightedSource(
   writer: IndentingWriter,
-  lines: string[],
+  lines: readonly string[],
   brief: boolean = false
 ): void {
   const highlighted = cliHighlight(lines.join('\n'), {
@@ -82,28 +82,28 @@ type ShowAttributionOptions = {
 
 function showAttribution(
   writer: IndentingWriter,
-  info: AttributionInfo,
+  attr: Attribution,
   options: ShowAttributionOptions = {}
 ): void {
   const extra = options.extraMetadata ? ` (${options.extraMetadata})` : '';
 
-  switch (info.kind) {
+  switch (attr.kind) {
     case 'sourceLocation':
       writer.log(
-        `- ${info.url} (${info.lineNumber}:${info.columnNumber})${extra}`.white
+        `- ${attr.url} (${attr.lineNumber}:${attr.columnNumber})${extra}`.white
       );
 
       writer.withIndent(() => {
-        if (info.sourceLines) {
-          showHighlightedSource(writer, info.sourceLines, options.brief ?? false);
-        } else if (info.functionName && info.functionName !== '') {
-          writer.log(`-> `.white + `${info.functionName}()`.bold);
+        if (attr.sourceLines) {
+          showHighlightedSource(writer, attr.sourceLines, options.brief ?? false);
+        } else if (attr.functionName && attr.functionName !== '') {
+          writer.log(`-> `.white + `${attr.functionName}()`.bold);
         }
       });
       return;
 
     case 'file':
-      writer.log(`- ` + `${info.url}${extra}`.white);
+      writer.log(`- ` + `${attr.url}${extra}`.white);
       return;
 
     case 'unknown':
@@ -111,16 +111,16 @@ function showAttribution(
       return;
 
     default:
-      const unknown: never = info;
+      const unknown: never = attr;
       throw new Error(`Unexpected attribution kind: ${JSON.stringify(unknown)}`);
   }
 };
 
 function showTriggers(
   writer: IndentingWriter,
-  info: AttributionInfo
+  context: AttributionContext
 ): void {
-  const triggers = info.triggers.filter(t => t !== 'RunTask');
+  const triggers = context.triggers.filter(t => t !== 'RunTask');
   if (triggers.length > 0) {
     writer.log(`- Triggered by:`.bold);
     writer.withIndent(() => {
@@ -189,7 +189,7 @@ export function showPrettySummary(
           }
         });
 
-        showTriggers(writer, stats.attribution);
+        showTriggers(writer, stats.context);
 
         if (stats.descendantBreakdowns.size > 0) {
           writer.log(`- Invokes:`.bold);
@@ -216,7 +216,7 @@ export function showPrettySummary(
           writer.withIndent(() => {
             const duration = longestInstance.breakdown.total;
             writer.log(`- Duration: `.bold + `${duration}ms`.red);
-            showTriggers(writer, longestInstance.attribution);
+            showTriggers(writer, longestInstance.context);
           });
         }
       });

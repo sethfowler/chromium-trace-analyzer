@@ -1,4 +1,3 @@
-import { HasAttributionInfo } from '../attributions';
 import {
   Breakdown,
   HasBreakdown,
@@ -13,7 +12,7 @@ import {
 } from '../taskgraph';
 
 function gatherBreakdowns(
-  tasks: TaskWithData<HasAttributionInfo & HasBreakdown & HasTaskId>[]
+  tasks: TaskWithData<HasBreakdown & HasTaskId>[]
 ): Breakdown {
   const allSubtreeBreakdowns: Breakdown[] = [];
 
@@ -62,7 +61,7 @@ function gatherBreakdowns(
 // A pass that computes a breakdown for each task - in other words, a high level
 // summary of where the task is spending its time.
 export function computeBreakdowns<
-  T extends TaskTrace<HasAttributionInfo & HasTaskId, {}>
+  T extends TaskTrace<HasTaskId, {}>
 >(
   trace: T
 ): asserts trace is TaskTraceWithAddedData<T, HasBreakdown, {}> {

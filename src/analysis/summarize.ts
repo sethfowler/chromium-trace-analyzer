@@ -2,7 +2,8 @@ import cloneDeep from 'clone-deep';
 
 import {
   attributionId,
-  AttributionInfo,
+  Attribution,
+  AttributionContext,
   HasAttributionInfo,
   isAttributedTo
 } from '../attributions';
@@ -15,7 +16,7 @@ import { log } from '../log';
 import { HasTaskId, TaskTrace, TaskWithData } from '../taskgraph';
 
 type DescendantBreakdown = {
-  attribution: Readonly<AttributionInfo>;
+  attribution: Attribution;
   breakdown: Breakdown;
 };
 
@@ -24,7 +25,8 @@ type DescendantBreakdown = {
 export type AttributionStatistics = {
   // The source location these statistics are for. This may be a merged version
   // of the attribution from multiple tasks.
-  attribution: Readonly<AttributionInfo>;
+  attribution: Attribution;
+  context: AttributionContext;
 
   // A breakdown of how the time associated with the source location is being
   // spent.
@@ -58,17 +60,17 @@ function accumulateStatistics(
     task.metadata.breakdown
   );
 
-  const info = task.metadata.attributionInfo;
+  const taskContext = task.metadata.context;
 
-  for (const url of info.lighthouseAttributableURLs) {
-    if (!stats.attribution.lighthouseAttributableURLs.includes(url)) {
-      stats.attribution.lighthouseAttributableURLs.push(url);
+  for (const url of taskContext.lighthouseAttributableURLs) {
+    if (!stats.context.lighthouseAttributableURLs.includes(url)) {
+      stats.context.lighthouseAttributableURLs.push(url);
     }
   }
 
-  for (const trigger of info.triggers) {
-    if (!stats.attribution.triggers.includes(trigger)) {
-      stats.attribution.triggers.push(trigger);
+  for (const trigger of taskContext.triggers) {
+    if (!stats.context.triggers.includes(trigger)) {
+      stats.context.triggers.push(trigger);
     }
   }
 
@@ -115,14 +117,15 @@ function gatherStatistics(
       task.children
     );
 
-    const info = task.metadata.attributionInfo;
-    const attrId = attributionId(info);
+    const attribution = task.metadata.attribution;
+    const context = task.metadata.context;
+    const attrId = attributionId(attribution);
     const taskId = task.metadata.taskId;
 
     // Propagate descendant attributions up the tree.
-    if (info.isRoot) {
+    if (context.isAttributionRoot) {
       mergeDescendantBreakdowns(descendantBreakdowns, attrId, {
-        attribution: cloneDeep(info),
+        attribution,
         breakdown: cloneDeep(task.metadata.breakdown)
       });
     }
@@ -140,7 +143,7 @@ function gatherStatistics(
     // if we accumulate the breakdowns from the subtree as well, we'll be
     // incorporating the same numbers into the statistics more than once and the
     // total will be too high.
-    if (!info.isRoot) { continue; }
+    if (!context.isAttributionRoot) { continue; }
 
     // Update the cumulative statistics for this task's attributed location. Note
     // that we need to deep clone the attribution information when initializing
@@ -150,7 +153,8 @@ function gatherStatistics(
     const cumulativeStats = cumulativeStatsMap.get(attrId);
     if (!cumulativeStats) {
       cumulativeStatsMap.set(attrId, {
-        attribution: cloneDeep(info),
+        attribution,
+        context,
         descendantBreakdowns: cloneDeep(descendantBreakdownsForTask),
         breakdown: cloneDeep(task.metadata.breakdown),
         taskIds: [taskId]
@@ -170,7 +174,8 @@ function gatherStatistics(
       task.metadata.breakdown.total > longestDurationStats.breakdown.total
     ) {
       longestDurationStatsMap.set(attrId, {
-        attribution: info,
+        attribution,
+        context,
         descendantBreakdowns: descendantBreakdownsForTask,
         breakdown: task.metadata.breakdown,
         startTime: task.startTime,
@@ -180,7 +185,8 @@ function gatherStatistics(
 
     // Record the per-task statistics.
     taskStatsMap.set(taskId, {
-      attribution: info,
+      attribution,
+      context,
       descendantBreakdowns: descendantBreakdownsForTask,
       breakdown: task.metadata.breakdown,
       startTime: task.startTime,
@@ -243,13 +249,13 @@ export function createSummary(
   // Filter the results by URL pattern if the caller requested it.
   if (scriptUrlPattern) {
     byCumulativeDuration = byCumulativeDuration.filter(task =>
-      isAttributedTo(task.attribution, scriptUrlPattern)
+      isAttributedTo(task.attribution, task.context, scriptUrlPattern)
     );
     byLongestInstanceDuration = byLongestInstanceDuration.filter(task =>
-      isAttributedTo(task.attribution, scriptUrlPattern)
+      isAttributedTo(task.attribution, task.context, scriptUrlPattern)
     );
     byTaskDuration = byTaskDuration.filter(task =>
-      isAttributedTo(task.attribution, scriptUrlPattern)
+      isAttributedTo(task.attribution, task.context, scriptUrlPattern)
     );
   }
 

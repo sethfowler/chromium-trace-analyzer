@@ -1,9 +1,9 @@
 import path from 'path';
 import { RawSourceMap, SourceMapConsumer } from 'source-map';
 
-import { HasAttributionInfo, SourceAttribution } from '../attributions';
+import { HasAttributionMap, MutableAttribution, SourceAttribution } from '../attributions';
 import { log } from '../log';
-import { TaskTrace, TaskWithData } from '../taskgraph';
+import { TaskTrace } from '../taskgraph';
 import { readFileAsLines } from '../util';
 
 const fileCache = new Map<string, string[]>();
@@ -90,18 +90,13 @@ async function applySourceMap(
   scriptUrlPattern: string,
   webpackRoot: string | undefined,
   consumer: SourceMapConsumer,
-  tasks: TaskWithData<HasAttributionInfo>[]
+  attr: MutableAttribution
 ): Promise<void> {
-  for (const task of tasks) {
-    const info = task.metadata.attributionInfo;
-    if (
-      info.kind === 'sourceLocation' &&
-      info.url.includes(scriptUrlPattern)
-    ) {
-      await updateFromSourceMap(webpackRoot, consumer, info);
-    }
-
-    await applySourceMap(scriptUrlPattern, webpackRoot, consumer, task.children);
+  if (
+    attr.kind === 'sourceLocation' &&
+    attr.url.includes(scriptUrlPattern)
+  ) {
+    await updateFromSourceMap(webpackRoot, consumer, attr);
   }
 }
 
@@ -114,7 +109,7 @@ export type SourceMapSpec = {
 // A pass that rewrites source location attributions using a source map so that
 // the results are easier to interpret for humans.
 export async function applySourceMapToAttributions(
-  trace: TaskTrace<HasAttributionInfo, {}>,
+  trace: TaskTrace<{}, HasAttributionMap>,
   mappings: SourceMapSpec[]
 ): Promise<void> {
   log.debug(`Starting applySourceMapToAttributions pass.`);
@@ -122,12 +117,14 @@ export async function applySourceMapToAttributions(
   for (const mapping of mappings) {
     const sourceMap = mapping.map as RawSourceMap;
     await SourceMapConsumer.with(sourceMap, null, async (consumer) => {
-      await applySourceMap(
-        mapping.urlPattern,
-        mapping.webpackRoot,
-        consumer,
-        trace.tasks
-      );
+      for (const attribution of trace.metadata.attributionMap.mutableValues()) {
+        await applySourceMap(
+          mapping.urlPattern,
+          mapping.webpackRoot,
+          consumer,
+          attribution
+        );
+      }
     });
   }
 }

@@ -1,7 +1,8 @@
 import {
-  AttributionInfo,
-  BaseAttribution,
+  Attribution,
+  AttributionMap,
   HasAttributionInfo,
+  HasAttributionMap,
   Trigger
 } from '../attributions';
 import { FrameInfo, HasFrameInfo } from '../frames';
@@ -17,17 +18,12 @@ import {
 // which it lives), try to give it as fine-grained an attribution as we possibly
 // can.
 function extractAttribution(
+  attributionMap: AttributionMap,
   frameInfoMap: Map<string, FrameInfo>,
-  scopeTrigger: Trigger,
   scopeLighthouseAttributableURLs: Set<string>,
   task: TaskWithData<HasTaskId>
-): AttributionInfo {
+): Attribution {
   const taskId = task.metadata.taskId;
-  const baseAttribution: BaseAttribution = {
-    isRoot: false,
-    lighthouseAttributableURLs: [...task.attributableURLs],
-    triggers: [scopeTrigger]
-  };
 
   // If the event has a stack trace, we can attribute it to a source location.
   const args = task.event.args ?? {};
@@ -36,11 +32,10 @@ function extractAttribution(
   const stackTrace = data.stackTrace ?? args.beginData?.stackTrace;
   if (stackTrace && stackTrace.length > 0) {
     log.debug(`Assigned source attribution to task ${taskId} from stack trace`);
-    return {
+    return attributionMap.create({
       kind: 'sourceLocation',
-      ...baseAttribution,
       ...stackTrace[0]
-    };
+    });
   }
 
   // If the event data includes a source location, use that.
@@ -50,14 +45,13 @@ function extractAttribution(
 
   if (url && lineNumber !== undefined && columnNumber !== undefined) {
     log.debug(`Assigned source attribution to task ${taskId} from event data`);
-    return {
+    return attributionMap.create({
       kind: 'sourceLocation',
-      ...baseAttribution,
       url,
       functionName: data?.functionName,
       lineNumber,
       columnNumber
-    };
+    });
   }
 
   // If the event data only includes a stack frame id, we might be able to give
@@ -66,45 +60,41 @@ function extractAttribution(
     log.debug(
       `Assigned source attribution to task ${taskId} from stack frame ${frame}`
     );
-    return {
+    return attributionMap.create({
       kind: 'sourceLocation',
-      ...baseAttribution,
       ...frameInfoMap.get(frame)!
-    };
+    });
   }
 
   // We're not going to be able to attribute this event to a precise source
   // location, but we can attribute it to a file if the event has a URL.
   if (url) {
     log.debug(`Assigned file attribution to task ${taskId} from event URL`);
-    return {
+    return attributionMap.create({
       kind: 'file',
-      ...baseAttribution,
       url
-    };
+    });
   }
 
   // Some events have a filename instead of a URL; try that.
   if (args.fileName) {
     log.debug(`Assigned file attribution to task ${taskId} from event filename`);
-    return {
+    return attributionMap.create({
       kind: 'file',
-      ...baseAttribution,
       url: args.fileName
-    }
+    });
   }
 
   // If the Lighthouse attribution is unambiguous, use that.
-  if (baseAttribution.lighthouseAttributableURLs.length === 1) {
+  if (task.attributableURLs.length === 1) {
     log.debug(
       `Assigned file attribution to task ${taskId} from unique ` +
       `Lighthouse attribution URL`
     );
-    return {
+    return attributionMap.create({
       kind: 'file',
-      ...baseAttribution,
-      url: baseAttribution.lighthouseAttributableURLs[0]
-    };
+      url: task.attributableURLs[0]
+    });
   }
 
   // If the Lighthouse attribution is ambiguous, we might be able to
@@ -112,7 +102,7 @@ function extractAttribution(
   // attribution of any of its ancestors. We can assume that that new URL is
   // the "right" URL for this event.
   const newLighthouseAttributableURLs: string[] = [];
-  for (const url of baseAttribution.lighthouseAttributableURLs) {
+  for (const url of task.attributableURLs) {
     if (!scopeLighthouseAttributableURLs.has(url)) {
       newLighthouseAttributableURLs.push(url);
     }
@@ -123,19 +113,15 @@ function extractAttribution(
       `Assigned file attribution to task ${taskId} from unique new ` +
       `Lighthouse attribution URL`
     );
-    return {
+    return attributionMap.create({
       kind: 'file',
-      ...baseAttribution,
       url: newLighthouseAttributableURLs[0]
-    };
+    });
   }
 
   // We're out of heuristics. C'est la vie.
   log.debug(`Assigned unknown attribution to task ${taskId}`);
-  return {
-    kind: 'unknown',
-    ...baseAttribution
-  };
+  return attributionMap.create({ kind: 'unknown' });
 }
 
 // Simplify the provided attribution if we can. We do this to get rid of source
@@ -145,27 +131,25 @@ function extractAttribution(
 // we never replace source location attributions, so without this simplification
 // we won't be able to take advantage of that.
 function simplifyAttribution(
+  attributionMap: AttributionMap,
   task: TaskWithData<HasTaskId>,
-  info: AttributionInfo
-): AttributionInfo {
+  attr: Attribution
+): Attribution {
   if (
-    info.kind === 'sourceLocation' &&
-    info.lineNumber === 1 &&
-    info.columnNumber === 1
+    attr.kind === 'sourceLocation' &&
+    attr.lineNumber === 1 &&
+    attr.columnNumber === 1
   ) {
     log.debug(
       `Simplified trivial source attribution to file attribution for ` +
       `task ${task.metadata.taskId}`
     );
-    return {
+    return attributionMap.create({
       kind: 'file',
-      isRoot: info.isRoot,
-      lighthouseAttributableURLs: info.lighthouseAttributableURLs,
-      triggers: info.triggers,
-      url: info.url
-    };
+      url: attr.url
+    });
   }
-  return info;
+  return attr;
 }
 
 // Figure out if this task has a different trigger than the containing scope. If
@@ -187,19 +171,32 @@ function propagateTrigger(
 }
 
 function gatherAttributions(
+  attributionMap: AttributionMap,
   frameInfoMap: Map<string, FrameInfo>,
   scopeTrigger: Trigger,
   scopeLighthouseAttributableURLs: Set<string>,
   tasks: TaskWithData<HasAttributionInfo & HasTaskId>[]
 ): void {
   for (const task of tasks) {
+    // Assign an attribution.
     const taskAttribution = extractAttribution(
+      attributionMap,
       frameInfoMap,
-      scopeTrigger,
       scopeLighthouseAttributableURLs,
       task
     );
-    task.metadata.attributionInfo = simplifyAttribution(task, taskAttribution);
+    task.metadata.attribution = simplifyAttribution(
+      attributionMap,
+      task,
+      taskAttribution
+    );
+
+    // Assign an attribution context.
+    task.metadata.context = {
+      isAttributionRoot: false,
+      lighthouseAttributableURLs: [...task.attributableURLs],
+      triggers: [scopeTrigger]
+    };
 
     const subtreeTrigger = propagateTrigger(task, scopeTrigger);
     log.debug(`Trigger for task ${task.metadata.taskId} subtree is ${subtreeTrigger}`);
@@ -207,11 +204,12 @@ function gatherAttributions(
     const subtreeLighthouseAttributableURLs = new Set<string>(
       scopeLighthouseAttributableURLs
     );
-    for (const url of task.metadata.attributionInfo.lighthouseAttributableURLs) {
+    for (const url of task.metadata.context.lighthouseAttributableURLs) {
       subtreeLighthouseAttributableURLs.add(url);
     }
 
     gatherAttributions(
+      attributionMap,
       frameInfoMap,
       subtreeTrigger,
       subtreeLighthouseAttributableURLs,
@@ -224,12 +222,19 @@ function gatherAttributions(
 // source locations) to tasks in the task graph.
 export function assignAttributions<T extends TaskTrace<HasTaskId, HasFrameInfo>>(
   trace: T
-): asserts trace is TaskTraceWithAddedData<T, HasAttributionInfo, {}> {
+): asserts trace is TaskTraceWithAddedData<
+  T,
+  HasAttributionInfo,
+  HasAttributionMap
+> {
   log.debug(`Starting assignAttributions pass.`);
 
   const traceWithAddedData =
-    trace as TaskTraceWithAddedData<T, HasAttributionInfo, {}>;
+    trace as TaskTraceWithAddedData<T, HasAttributionInfo, HasAttributionMap>;
+  traceWithAddedData.metadata.attributionMap = new AttributionMap();
+
   gatherAttributions(
+    traceWithAddedData.metadata.attributionMap,
     traceWithAddedData.metadata.frameInfo,
     'RunTask',
     new Set<string>(),

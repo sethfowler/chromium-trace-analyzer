@@ -3,7 +3,12 @@ import { findAttributionRoots } from './findAttributionRoots';
 import { inferFrameSourceLocations } from './inferFrameSourceLocations';
 import { propagateAttributions } from './propagateAttributions';
 
-import { AttributionInfo, HasAttributionInfo } from '../attributions';
+import {
+  Attribution,
+  AttributionMap,
+  HasAttributionInfo,
+  HasAttributionMap
+} from '../attributions';
 import { FrameInfo, HasFrameInfo } from '../frames';
 import { log } from '../log';
 import {
@@ -14,9 +19,10 @@ import {
 } from '../taskgraph';
 
 function propagateAttributionFromFrameInfo(
-  taskAttribution: AttributionInfo,
+  attributionMap: AttributionMap,
+  taskAttribution: Attribution,
   frameInfo: FrameInfo
-): AttributionInfo {
+): Attribution {
   if (taskAttribution.kind === 'sourceLocation') {
     return taskAttribution;  // Things are as good as they can get already.
   }
@@ -31,35 +37,24 @@ function propagateAttributionFromFrameInfo(
       return taskAttribution;
     }
 
-    return {
-      kind: 'file',
-      isRoot: taskAttribution.isRoot,
-      lighthouseAttributableURLs: [...taskAttribution.lighthouseAttributableURLs],
-      triggers: [...taskAttribution.triggers],
-      url: frameInfo.url
-    };
+    return attributionMap.create({ kind: 'file', url: frameInfo.url });
   }
 
-  return {
-    kind: 'sourceLocation',
-    isRoot: taskAttribution.isRoot,
-    lighthouseAttributableURLs: [...taskAttribution.lighthouseAttributableURLs],
-    triggers: [...taskAttribution.triggers],
-    ...frameInfo
-  };
+  return attributionMap.create({ kind: 'sourceLocation', ...frameInfo });
 }
 
 // Look for attributions that aren't source locations, but for which we have a
 // frame id, and try to give them a source location. This is basically a greatly
 // simplified version of assignAttributions that only handles frame ids.
 function updateFrameAttributions(
+  attributionMap: AttributionMap,
   frameInfoMap: Map<string, FrameInfo>,
   tasks: TaskWithData<HasAttributionInfo & HasTaskId>[]
 ): boolean {
   let changed = false;
 
   for (const task of tasks) {
-    const taskAttribution = task.metadata.attributionInfo;
+    const taskAttribution = task.metadata.attribution;
     const taskId = task.metadata.taskId;
 
     if (taskAttribution.kind !== 'sourceLocation') {
@@ -68,6 +63,7 @@ function updateFrameAttributions(
 
       if (frame && frameInfoMap.has(frame)) {
         const newAttribution = propagateAttributionFromFrameInfo(
+          attributionMap,
           taskAttribution,
           frameInfoMap.get(frame)!
         );
@@ -78,13 +74,17 @@ function updateFrameAttributions(
             `inferred stack frame ${frame}`
           );
 
-          task.metadata.attributionInfo = newAttribution;
+          task.metadata.attribution = newAttribution;
           changed = true;
         }
       }
     }
 
-    const subtreeChanged = updateFrameAttributions(frameInfoMap, task.children);
+    const subtreeChanged = updateFrameAttributions(
+      attributionMap,
+      frameInfoMap,
+      task.children
+    );
     changed = changed || subtreeChanged;
   }
 
@@ -94,7 +94,7 @@ function updateFrameAttributions(
 // A meta-pass that iteratively propagates attributions and then reruns
 // inference passes that might be able to get better results after propagation.
 function propagateAndInferAttributions(
-  trace: TaskTrace<HasAttributionInfo & HasTaskId, HasFrameInfo>
+  trace: TaskTrace<HasAttributionInfo & HasTaskId, HasAttributionMap & HasFrameInfo>
 ): void {
   // Attribution propagation is an iterative process that should converge, but
   // just in case there's a bug that prevents convergence, limit the number of
@@ -110,8 +110,11 @@ function propagateAndInferAttributions(
     // Infer frame source locations again and see if we improved any
     // attributions. If so, we'll want to propagate again.
     inferFrameSourceLocations(trace);
-    const attributionsChanged = 
-      updateFrameAttributions(trace.metadata.frameInfo, trace.tasks);
+    const attributionsChanged = updateFrameAttributions(
+      trace.metadata.attributionMap,
+      trace.metadata.frameInfo,
+      trace.tasks
+    );
 
     if (!attributionsChanged) {
       log.debug(`propagateAndInferAttributions: done.`);
@@ -127,7 +130,11 @@ function propagateAndInferAttributions(
 // can infer.
 export function inferAttributions<T extends TaskTrace<HasTaskId, {}>>(
   trace: T
-): asserts trace is TaskTraceWithAddedData<T, HasAttributionInfo, HasFrameInfo> {
+): asserts trace is TaskTraceWithAddedData<
+  T,
+  HasAttributionInfo,
+  HasFrameInfo & HasAttributionMap
+> {
   log.debug(`Starting inferAttributions pass.`);
 
   inferFrameSourceLocations(trace);

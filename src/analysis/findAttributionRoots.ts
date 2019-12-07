@@ -1,4 +1,4 @@
-import { attributionId, HasAttributionInfo } from '../attributions';
+import { Attribution, attributionId, HasAttributionInfo } from '../attributions';
 import { log } from '../log';
 import {
   HasTaskId,
@@ -8,26 +8,26 @@ import {
 
 function assignAttributionRoots(
   tasks: TaskWithData<HasAttributionInfo & HasTaskId>[],
-  ancestorAttributions: string[]
+  ancestorAttributions: Attribution[]
 ): void {
   for (const task of tasks) {
-    const attrId = attributionId(task.metadata.attributionInfo);
+    const attr = task.metadata.attribution;
 
     // A task is an attribution root if it has no ancestors with the same
     // attribution.
-    if (!ancestorAttributions.includes(attrId)) {
+    if (!ancestorAttributions.includes(attr)) {
       log.debug(
         `Task %n is an attribution root for attribution %s`,
         task.metadata.taskId,
-        attrId
+        attributionId(attr)
       );
-      task.metadata.attributionInfo.isRoot = true;
+      task.metadata.context.isAttributionRoot = true;
     } else {
-      task.metadata.attributionInfo.isRoot = false;
+      task.metadata.context.isAttributionRoot = false;
     }
 
     // Visit the children with this task's attribution root added to the stack.
-    ancestorAttributions.push(attrId);
+    ancestorAttributions.push(attr);
     assignAttributionRoots(task.children, ancestorAttributions);
     ancestorAttributions.pop();
   }

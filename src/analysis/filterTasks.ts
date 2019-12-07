@@ -112,8 +112,10 @@ export function filterTasksByUrlPattern<
       keepTask: false
     };
 
-    const attribution = task.metadata.attributionInfo;
-    if (isAttributedTo(attribution, scriptUrlPattern, lineNumber)) {
+    const attr = task.metadata.attribution;
+    const context = task.metadata.context;
+
+    if (isAttributedTo(attr, context, scriptUrlPattern, lineNumber)) {
       result.keepTask = true;
       result.keepDescendants = true;
     }

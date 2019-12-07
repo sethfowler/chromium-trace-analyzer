@@ -1,8 +1,9 @@
 import {
   attributionId,
-  AttributionInfo,
+  Attribution,
+  AttributionMap,
   HasAttributionInfo,
-  SourceAttribution
+  HasAttributionMap
 } from '../attributions';
 import { log } from '../log';
 import { HasTaskId, TaskTrace, TaskWithData } from '../taskgraph';
@@ -11,9 +12,9 @@ import { HasTaskId, TaskTrace, TaskWithData } from '../taskgraph';
 // attribution information from another source. If so, propagate that
 // information to this task; otherwise, retain the task's current attribution.
 function propagateAttribution(
-  taskAttribution: AttributionInfo,
-  propagatedAttribution?: AttributionInfo
-): AttributionInfo {
+  taskAttribution: Attribution,
+  propagatedAttribution?: Attribution
+): Attribution {
   if (!propagatedAttribution) {
     return taskAttribution;  // Nothing to propagate.
   }
@@ -34,7 +35,8 @@ function propagateAttribution(
         return taskAttribution;
       }
 
-      break;
+      // The propagated attribution is more precise.
+      return propagatedAttribution;
 
     case 'unknown':
       if (propagatedAttribution.kind === 'unknown') {
@@ -42,29 +44,22 @@ function propagateAttribution(
         return taskAttribution;
       }
 
-      break;
+      // The propagated attribution is more precise.
+      return propagatedAttribution;
 
     default:
       const unknown: never = taskAttribution;
       throw new Error(`Unexpected attribution kind: ${JSON.stringify(unknown)}`);
   }
-
-  // The propagated attribution is more precise. We'll use that, but keep around
-  // Lighthouse's opinion of this specific task's attribution.
-  return {
-    ...propagatedAttribution,
-    isRoot: taskAttribution.isRoot,
-    lighthouseAttributableURLs: taskAttribution.lighthouseAttributableURLs,
-    triggers: taskAttribution.triggers
-  };
 }
 
 function findCommonAttribution(
-  attributions: AttributionInfo[]
-): AttributionInfo | undefined {
+  attributionMap: AttributionMap,
+  attributions: Attribution[]
+): Attribution | undefined {
   const urls = new Set<string>();
   const sourceAttrs = new Set<string>();
-  let sourceAttribution: SourceAttribution | undefined;
+  let sourceAttribution: Attribution | undefined;
 
   // Find common factors between the attributions.
   for (const attribution of attributions) {
@@ -106,41 +101,37 @@ function findCommonAttribution(
   // generate a common file attribution. Note that the only thing that really
   // matters here is the URL; the other fields don't get propagated.
   const url = [...urls.values()][0];
-  return {
-    kind: 'file',
-    isRoot: false,
-    lighthouseAttributableURLs: [],
-    triggers: [],
-    url
-  };
+  return attributionMap.create({ kind: 'file', url });
 }
 
 // Propagate attributions by scope - i.e., from parent to child. We also
 // propagate in reverse, from child to parent, in cases where that would be
 // unambiguous and the child is more specific.
 function propagateByScope(
+  attributionMap: AttributionMap,
   tasks: TaskWithData<HasAttributionInfo & HasTaskId>[],
-  scopeAttribution?: AttributionInfo
+  scopeAttribution?: Attribution
 ): boolean {
   let changed = false;
 
   for (const task of tasks) {
     // Propagate the attribution from the enclosing scope.
     const propagatedAttribution = propagateAttribution(
-      task.metadata.attributionInfo,
+      task.metadata.attribution,
       scopeAttribution
     );
-    if (propagatedAttribution !== task.metadata.attributionInfo) {
+    if (propagatedAttribution !== task.metadata.attribution) {
       log.debug(
         `Propagating scope attribution from parent ${task.parent!.metadata.taskId} ` +
         `to child ${task.metadata.taskId}`
       );
       changed = true;
-      task.metadata.attributionInfo = propagatedAttribution;
+      task.metadata.attribution = propagatedAttribution;
     }
 
     // Propagate to child tasks.
     const changedViaChildren = propagateByScope(
+      attributionMap,
       task.children,
       propagatedAttribution
     );
@@ -148,7 +139,8 @@ function propagateByScope(
 
     // Check if there's a consistent attribution for all children.
     const commonAttribution = findCommonAttribution(
-      task.children.map(child => child.metadata.attributionInfo)
+      attributionMap,
+      task.children.map(child => child.metadata.attribution)
     );
 
     // If we found a consistent attribution, propagate it upwards.
@@ -156,12 +148,12 @@ function propagateByScope(
       propagatedAttribution,
       commonAttribution
     );
-    if (upwardsAttribution !== task.metadata.attributionInfo) {
+    if (upwardsAttribution !== task.metadata.attribution) {
       log.debug(
         `Propagating child attributions to parent ${task.metadata.taskId}`
       );
       changed = true;
-      task.metadata.attributionInfo = upwardsAttribution;
+      task.metadata.attribution = upwardsAttribution;
     }
   }
 
@@ -177,12 +169,12 @@ function propagateBySequence(
   let changed = false;
 
   // Locate the first attribution with a source location.
-  let lastSourceAttribution: AttributionInfo | undefined;
+  let lastSourceAttribution: Attribution | undefined;
   let lastSourceAttributionTaskId: number | undefined;
   for (const task of tasks) {
-    const attrInfo = task.metadata.attributionInfo;
-    if (attrInfo.kind === 'sourceLocation') {
-      lastSourceAttribution = attrInfo;
+    const attr = task.metadata.attribution;
+    if (attr.kind === 'sourceLocation') {
+      lastSourceAttribution = attr;
       lastSourceAttributionTaskId = task.metadata.taskId;
       break;
     }
@@ -194,24 +186,24 @@ function propagateBySequence(
   // source location above; that's the one we're potentially going to be
   // propagating backwards.)
   for (const task of tasks) {
-    const attrInfo = task.metadata.attributionInfo;
-    if (attrInfo.kind === 'sourceLocation') {
-      lastSourceAttribution = attrInfo;
+    const attr = task.metadata.attribution;
+    if (attr.kind === 'sourceLocation') {
+      lastSourceAttribution = attr;
       lastSourceAttributionTaskId = task.metadata.taskId;
       continue;
     }
-    if (lastSourceAttribution && attrInfo.kind === 'file') {
+    if (lastSourceAttribution && attr.kind === 'file') {
       const propagatedAttribution = propagateAttribution(
-        attrInfo,
+        attr,
         lastSourceAttribution
       );
-      if (propagatedAttribution !== task.metadata.attributionInfo) {
+      if (propagatedAttribution !== task.metadata.attribution) {
         log.debug(
           `Propagating sequence attribution from task ${lastSourceAttributionTaskId!} ` +
           ` to task ${task.metadata.taskId}`
         );
         changed = true;
-        task.metadata.attributionInfo = propagatedAttribution;
+        task.metadata.attribution = propagatedAttribution;
       }
     }
   }
@@ -228,7 +220,7 @@ function propagateBySequence(
 // A pass that propagates attributions through the task graph, using the context
 // of a task to try to give it a more precise attribution.
 export function propagateAttributions(
-  trace: TaskTrace<HasAttributionInfo & HasTaskId, {}>
+  trace: TaskTrace<HasAttributionInfo & HasTaskId, HasAttributionMap>
 ): void {
   // This is an iterative process that should converge, but just in case there's
   // a bug that prevents convergence, limit the number of iterations we'll
@@ -238,7 +230,10 @@ export function propagateAttributions(
   for (let i = 0; i < iterationLimit; i++) {
     log.debug(`Starting propagateAttributions pass: iteration ${i}`);
 
-    const changedViaScope = propagateByScope(trace.tasks);
+    const changedViaScope = propagateByScope(
+      trace.metadata.attributionMap,
+      trace.tasks
+    );
     const changedViaSequence = propagateBySequence(trace.tasks);
 
     if (!changedViaScope && !changedViaSequence) {

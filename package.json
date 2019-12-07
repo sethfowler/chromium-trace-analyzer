@@ -48,6 +48,7 @@
     "@types/clone-deep": "^4.0.1",
     "@types/node": "^12.12.14",
     "@types/pino": "^5.8.13",
+    "ts-essentials": "^3.0.5",
     "typescript": "^3.7.3"
   }
 }
