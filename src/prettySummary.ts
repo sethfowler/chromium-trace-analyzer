@@ -131,6 +131,38 @@ function showTriggers(
   }
 }
 
+function showTopLevelAttribution(
+  writer: IndentingWriter,
+  stats: AttributionStatistics
+): void {
+  // If we can attribute this task to something specific, use that.
+  if (stats.attribution.kind !== 'unknown') {
+    showAttribution(writer, stats.attribution);
+    return;
+  }
+
+  // If more than half of the time spent in this task is attributed to something
+  // specific, use that.
+  // TODO: This would work a bit better if we merged different lines in the same
+  // file for this purpose.
+  if (stats.descendantBreakdowns.size > 0) {
+    const descendants = [...stats.descendantBreakdowns.values()]
+      .sort((a, b) => b.breakdown.total - a.breakdown.total);
+    const hottestDescendant = descendants[0];
+    const hottestPercentage =
+      (hottestDescendant.breakdown.total / stats.breakdown.total) * 100;
+    if (hottestPercentage >= 50) {
+      showAttribution(writer, hottestDescendant.attribution, {
+        extraMetadata: `primary - ${round(hottestPercentage)}%`
+      });
+      return;
+    }
+  }
+
+  // C'est la vie. Show the original 'unknown' value.
+  showAttribution(writer, stats.attribution);
+}
+
 export function showPrettySummary(
   title: string,
   entries: AttributionStatistics[]
@@ -143,7 +175,7 @@ export function showPrettySummary(
     for (const stats of entries) {
       writer.log();
 
-      showAttribution(writer, stats.attribution);
+      showTopLevelAttribution(writer, stats);
 
       writer.withIndent(() => {
         showTiming(writer, stats);
