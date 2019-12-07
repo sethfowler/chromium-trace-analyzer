@@ -33,14 +33,19 @@ class IndentingWriter {
   }
 }
 
+function round(n: number): string {
+  const intDigits = String(Math.floor(n)).length;
+  return n.toPrecision(intDigits + 2);
+}
+
 function showTiming(
   writer: IndentingWriter,
   stats: AttributionStatistics
 ): void {
   if (stats.startTime !== undefined) {
-    writer.log(`- Start time: `.bold + `${stats.startTime}ms`);
+    writer.log(`- Start time: `.bold + `${round(stats.startTime)}ms`);
   }
-  writer.log(`- Duration: `.bold + `${stats.breakdown.total}ms`.red);
+  writer.log(`- Duration: `.bold + `${round(stats.breakdown.total)}ms`.red);
 }
 
 function showHighlightedSource(
@@ -148,7 +153,7 @@ export function showPrettySummary(
           for (const [kind, duration] of Object.entries(stats.breakdown)) {
             if (kind === 'total') { continue; }
             if (duration === 0) { continue; }
-            writer.log(`- ${kind}: ` + `${duration}ms`.red);
+            writer.log(`- ${kind}: ` + `${round(duration)}ms`.red);
           }
         });
 
@@ -164,7 +169,7 @@ export function showPrettySummary(
               showAttribution(writer, descendant.attribution, {
                 brief: true,
                 extraMetadata:
-                  `${percentage.toPrecision(3)}% - ${duration.toPrecision(3)}ms`
+                  `${round(percentage)}% - ${round(duration)}ms`
               });
             }
           });

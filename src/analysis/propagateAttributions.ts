@@ -1,4 +1,5 @@
 import {
+  attributionId,
   AttributionInfo,
   HasAttributionInfo,
   SourceAttribution
@@ -52,8 +53,65 @@ function propagateAttribution(
   // Lighthouse's opinion of this specific task's attribution.
   return {
     ...propagatedAttribution,
+    isRoot: taskAttribution.isRoot,
     lighthouseAttributableURLs: taskAttribution.lighthouseAttributableURLs,
     triggers: taskAttribution.triggers
+  };
+}
+
+function findCommonAttribution(
+  attributions: AttributionInfo[]
+): AttributionInfo | undefined {
+  const urls = new Set<string>();
+  const sourceAttrs = new Set<string>();
+  let sourceAttribution: SourceAttribution | undefined;
+
+  // Find common factors between the attributions.
+  for (const attribution of attributions) {
+    switch (attribution.kind) {
+      case 'sourceLocation':
+        urls.add(attribution.url);
+        sourceAttrs.add(attributionId(attribution));
+        if (!sourceAttribution) {
+          sourceAttribution = attribution;
+        }
+        continue;
+
+      case 'file':
+        urls.add(attribution.url);
+        continue;
+
+      case 'unknown':
+        continue;
+
+      default:
+        const unknown: never = attribution;
+        throw new Error(`Unexpected attribution kind: ${JSON.stringify(unknown)}`);
+    }
+  }
+
+  // If there are multiple URLs - i.e., multiple scripts - represented, then
+  // there's no common attribution.
+  if (urls.size !== 1) {
+    return undefined;
+  }
+
+  // If only one source attribution is represented, then we'll treat that as the
+  // common attribution. Return an arbitrary source attribution from the list.
+  if (sourceAttrs.size === 1 && sourceAttribution) {
+    return sourceAttribution;
+  }
+
+  // If there's a common script but no common source attribution, then we can
+  // generate a common file attribution. Note that the only thing that really
+  // matters here is the URL; the other fields don't get propagated.
+  const url = [...urls.values()][0];
+  return {
+    kind: 'file',
+    isRoot: false,
+    lighthouseAttributableURLs: [],
+    triggers: [],
+    url
   };
 }
 
@@ -89,41 +147,14 @@ function propagateByScope(
     changed = changed || changedViaChildren;
 
     // Check if there's a consistent attribution for all children.
-    let childrenAttribution: SourceAttribution | undefined;
-    for (const child of task.children) {
-      const childAttribution = child.metadata.attributionInfo;
-      if (childAttribution.kind === 'sourceLocation') {
-        if (!childrenAttribution) {
-          childrenAttribution = childAttribution;
-          continue;
-        }
-        if (
-          childAttribution.url !== childrenAttribution.url ||
-          childAttribution.lineNumber !== childrenAttribution.lineNumber ||
-          childAttribution.columnNumber !== childrenAttribution.columnNumber
-        ) {
-          // There's no consistent attribution for all children, so don't
-          // propagate upwards.
-          childrenAttribution = undefined;
-          break;
-        }
-      } else if (childAttribution.kind === 'file') {
-        if (
-          childrenAttribution &&
-          childAttribution.url !== childrenAttribution.url
-        ) {
-          // There's no consistent attribution for all children, so don't
-          // propagate upwards.
-          childrenAttribution = undefined;
-          break;
-        }
-      }
-    }
+    const commonAttribution = findCommonAttribution(
+      task.children.map(child => child.metadata.attributionInfo)
+    );
 
     // If we found a consistent attribution, propagate it upwards.
     const upwardsAttribution = propagateAttribution(
       propagatedAttribution,
-      childrenAttribution
+      commonAttribution
     );
     if (upwardsAttribution !== task.metadata.attributionInfo) {
       log.debug(

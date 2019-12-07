@@ -13,20 +13,22 @@ function gatherFrameInfo(
     if (
       frame &&
       data.url &&
-      data.lineNumber &&
-      data.columnNumber &&
       !frameInfoMap.has(frame)
     ) {
-      const frameInfo = {
-        url: data.url,
-        functionName: data.functionName,  // May not be present.
-        lineNumber: data.lineNumber,
-        columnNumber: data.columnNumber,
-      };
+      const lineNumber = data.lineNumber ?? data.startLine;
+      if (lineNumber !== undefined) {
+        const columnNumber = data.columnNumber ?? 0;
+        const frameInfo = {
+          url: data.url,
+          functionName: data.functionName,  // May not be present.
+          lineNumber,
+          columnNumber
+        };
 
-      log.debug(`Inferred frame ${frame} location: `, frameInfo);
+        log.debug(`Inferred frame ${frame} location: `, frameInfo);
 
-      frameInfoMap.set(frame, frameInfo);
+        frameInfoMap.set(frame, frameInfo);
+      }
     }
 
     gatherFrameInfo(frameInfoMap, task.children);

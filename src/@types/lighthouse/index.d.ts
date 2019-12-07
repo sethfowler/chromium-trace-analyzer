@@ -185,6 +185,7 @@ declare module 'lighthouse' {
             fileName?: string;
             url?: string;
             functionName?: string;
+            startLine?: number;
             lineNumber?: number;
             columnNumber?: number;
           };
