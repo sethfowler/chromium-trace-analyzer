@@ -95,9 +95,15 @@ function gatherStatistics(
     const context = task.metadata.context;
     const taskId = task.metadata.taskId;
 
+    // If this isn't an attribution root, skip it. This cuts down on the amount
+    // of data we generate. (And it's require for correctness for the cumulative
+    // statistics; see below.)
+    if (!context.isAttributionRoot) { continue; }
+
     // Update the cumulative statistics for this task's attributed location.
     //
-    // We only include attribution roots - i.e., entry points of a subtree
+    // Note that unlike for other kinds of statistics, correctness requires that
+    // we only include attribution roots - i.e., entry points of a subtree
     // attributed to a particular source location - in the cumulative
     // statistics. We need to do this because each task's breakdown includes its
     // entire subtree, so if we accumulate the breakdowns from the subtree as
@@ -106,19 +112,17 @@ function gatherStatistics(
     //
     // Note also that deep cloning is needed here since we mutate some of these
     // data structures in accumulateStatistics().
-    if (context.isAttributionRoot) {
-      const cumulativeStats = cumulativeStatsMap.get(attribution);
-      if (!cumulativeStats) {
-        cumulativeStatsMap.set(attribution, {
-          attribution,
-          context: cloneDeep(context),
-          breakdownsByAttribution: cloneDeep(task.metadata.breakdownsByAttribution),
-          breakdown: cloneDeep(task.metadata.breakdown),
-          taskIds: [taskId]
-        });
-      } else {
-        accumulateStatistics(cumulativeStats, task);
-      }
+    const cumulativeStats = cumulativeStatsMap.get(attribution);
+    if (!cumulativeStats) {
+      cumulativeStatsMap.set(attribution, {
+        attribution,
+        context: cloneDeep(context),
+        breakdownsByAttribution: cloneDeep(task.metadata.breakdownsByAttribution),
+        breakdown: cloneDeep(task.metadata.breakdown),
+        taskIds: [taskId]
+      });
+    } else {
+      accumulateStatistics(cumulativeStats, task);
     }
 
     // Update the longest instance for this task's attributed location.
@@ -163,9 +167,17 @@ export type Summary = {
   byTimelineBuckets: [];
 };
 
+export type SummaryOptions = {
+  // If present, filter out results not attributed to this script URL.
+  scriptUrlPattern?: string;
+
+  // If present, only include top level tasks in the summary.
+  topLevelOnly?: boolean;
+};
+
 export function createSummary(
   trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasTaskId, {}>,
-  scriptUrlPattern?: string
+  options: SummaryOptions
 ): Summary {
   // Statistics that we track per-source-location.
   const cumulativeStatsMap = new Map<Attribution, AttributionStatistics>();
@@ -197,17 +209,24 @@ export function createSummary(
   let byTaskDuration = [...taskStatsMap.values()]
     .sort((a, b) => b.breakdown.total - a.breakdown.total);
 
-  // Filter the results by URL pattern if the caller requested it.
-  if (scriptUrlPattern) {
-    byCumulativeDuration = byCumulativeDuration.filter(task =>
-      isAttributedTo(task.attribution, task.context, scriptUrlPattern)
-    );
-    byLongestInstanceDuration = byLongestInstanceDuration.filter(task =>
-      isAttributedTo(task.attribution, task.context, scriptUrlPattern)
-    );
-    byTaskDuration = byTaskDuration.filter(task =>
-      isAttributedTo(task.attribution, task.context, scriptUrlPattern)
-    );
+  // Filter the results if the caller requested it.
+  if (options.scriptUrlPattern || options.topLevelOnly) {
+    const filterStats = (stats: AttributionStatistics): boolean => {
+      if (
+        options.scriptUrlPattern &&
+        !isAttributedTo(stats.attribution, stats.context, options.scriptUrlPattern)
+      ) {
+        return false;
+      }
+      if (options.topLevelOnly && !stats.context.isTopLevel) {
+        return false;
+      }
+      return true;
+    };
+
+    byCumulativeDuration = byCumulativeDuration.filter(filterStats);
+    byLongestInstanceDuration = byLongestInstanceDuration.filter(filterStats);
+    byTaskDuration = byTaskDuration.filter(filterStats);
   }
 
   return {
@@ -222,8 +241,8 @@ export function createSummary(
 
 export function summarize(
   trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasTaskId, {}>,
-  scriptUrlPattern?: string
+  options: SummaryOptions
 ): Summary {
   log.debug(`Starting summarize pass.`);
-  return createSummary(trace, scriptUrlPattern);
+  return createSummary(trace, options);
 }

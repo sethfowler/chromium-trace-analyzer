@@ -175,6 +175,7 @@ function gatherAttributions(
   frameInfoMap: Map<string, FrameInfo>,
   scopeTrigger: Trigger,
   scopeLighthouseAttributableURLs: Set<string>,
+  parent: TaskWithData<HasAttributionInfo & HasTaskId> | undefined,
   tasks: TaskWithData<HasAttributionInfo & HasTaskId>[]
 ): void {
   for (const task of tasks) {
@@ -193,6 +194,7 @@ function gatherAttributions(
 
     // Assign an attribution context.
     task.metadata.context = {
+      isTopLevel: !parent,
       isAttributionRoot: false,
       lighthouseAttributableURLs: [...task.attributableURLs],
       triggers: [scopeTrigger]
@@ -213,6 +215,7 @@ function gatherAttributions(
       frameInfoMap,
       subtreeTrigger,
       subtreeLighthouseAttributableURLs,
+      task,
       task.children
     );
   }
@@ -238,6 +241,7 @@ export function assignAttributions<T extends TaskTrace<HasTaskId, HasFrameInfo>>
     traceWithAddedData.metadata.frameInfo,
     'RunTask',
     new Set<string>(),
+    undefined,
     traceWithAddedData.tasks
   );
 }

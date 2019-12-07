@@ -40,8 +40,14 @@ function round(n: number): string {
 
 function showTiming(
   writer: IndentingWriter,
+  kind: 'cumulative' | 'simple',
   stats: AttributionStatistics
 ): void {
+  if (kind === 'cumulative') {
+    writer.log(`- Cumulative duration: `.bold + `${round(stats.breakdown.total)}ms`.red);
+    return;
+  }
+
   if (stats.startTime !== undefined) {
     writer.log(`- Start time: `.bold + `${round(stats.startTime)}ms`);
   }
@@ -133,6 +139,7 @@ function showTriggers(
 
 export function showPrettySummary(
   title: string,
+  kind: 'cumulative' | 'simple',
   entries: AttributionStatistics[]
 ): void {
   const writer = new IndentingWriter();
@@ -148,7 +155,7 @@ export function showPrettySummary(
       });
 
       writer.withIndent(() => {
-        showTiming(writer, stats);
+        showTiming(writer, kind, stats);
 
         writer.log(`- Breakdown:`.bold);
         writer.withIndent(() => {

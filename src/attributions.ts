@@ -11,6 +11,9 @@ export type Trigger = string;
 // nodes with the same attribution may have different values for these
 // properties.
 export type AttributionContext = {
+  // True if this is a top-level task.
+  isTopLevel: boolean;
+
   // True if we know that this task is an attribution root. That means that the
   // task has no ancestors with the same attribution; it's the entry point to a
   // subtree with that attribution.

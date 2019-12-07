@@ -10,7 +10,7 @@ import { createTaskTrace } from './analysis/createTaskTrace';
 import { computeBreakdowns } from './analysis/computeBreakdowns';
 import { filterTasksByUrlPattern } from './analysis/filterTasks';
 import { inferAttributions } from './analysis/inferAttributions';
-import { summarize } from './analysis/summarize';
+import { summarize, SummaryOptions } from './analysis/summarize';
 import { log } from './log';
 import { showPrettySummary } from './prettySummary';
 import { readFileAsJson } from './util';
@@ -59,6 +59,11 @@ export async function main() {
       `Whether to include only tasks that match the filter (fine) or to include ` +
       `nearby tasks as well (coarse).`,
       'fine'
+    )
+    .option(
+      `--topLevelOnly`,
+      `Only include top-level tasks in the summary.`,
+      false
     )
     .option(
       `--summary <${summaryNames.join('|')}>`,
@@ -134,13 +139,17 @@ export async function main() {
     console.log(
       `Applying ${scriptFilterType} filter for ${urlPattern}${position}...`.green
     );
-    filterTasksByUrlPattern(trace, scriptFilterType, urlPattern, lineNumber);
+    filterTasksByUrlPattern(trace, urlPattern, lineNumber);
   }
 
   console.log(`Summarizing...`.green);
-  const summary = scriptFilterType === 'fine'
-    ? summarize(trace, args.scriptFilter)
-    : summarize(trace);
+  const options: SummaryOptions = {
+    topLevelOnly: args.topLevelOnly,
+  };
+  if (scriptFilterType === 'fine') {
+    options.scriptUrlPattern = args.scriptFilter;
+  }
+  const summary = summarize(trace, options);
 
   if (args.outputJsonTrace && args.outputJsonSummary === args.outputJsonTrace) {
       console.log(
@@ -191,7 +200,8 @@ export async function main() {
     console.log();
     showPrettySummary(
       `Top ${topCount} Source Locations by Cumulative Duration`,
-      summary.byAttribution.byCumulativeDuration.slice(0, topCount)
+      'cumulative',
+      summary.byAttribution.byCumulativeDuration.slice(0, topCount),
     );
   }
 
@@ -200,6 +210,7 @@ export async function main() {
     console.log();
     showPrettySummary(
       `Top ${topCount} Source Locations by Longest Instance Duration`,
+      'simple',
       summary.byAttribution.byLongestInstanceDuration.slice(0, topCount)
     );
   }
@@ -209,6 +220,7 @@ export async function main() {
     console.log();
     showPrettySummary(
       `Top ${topCount} Tasks by Duration`,
+      'simple',
       summary.byTaskDuration.slice(0, topCount)
     );
   }

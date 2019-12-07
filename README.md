@@ -36,6 +36,17 @@ To see more tasks:
 chromium-trace-analyzer --trace profile.json --top 20
 ```
 
+By default, the summary includes a task for each entry point into a script, even
+if that entry point is nested inside another task. That means that the same
+tasks may be reported multiple times in the summary - by themselves, and as a
+component of their parent tasks. Often this is what you want, because you're
+more interested in scripts than in the tasks themselves, but sometimes you may
+want to see only top-level tasks, which correspond to spins of the event loop.
+To focus on top-level tasks:
+```bash
+chromium-trace-analyzer --trace profile.json --topLevelOnly
+```
+
 To see only a specific summary (`--help` will give you the full list of summary
 names):
 ```bash
