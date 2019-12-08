@@ -3,54 +3,7 @@ import cliHighlight from 'cli-highlight';
 
 import { Attribution, AttributionContext } from './attributions';
 import { AttributionStatistics } from './analysis/summarize';
-
-class IndentingWriter {
-  private _indent: number = 0;
-  private _specialChar: string | undefined = undefined;
-  private _specialCol: number = 0;
-
-  constructor(private _tabWidth: number = 2) {
-  }
-
-  indent(by: number = 1): void {
-    this._indent += by * this._tabWidth;
-  }
-
-  unindent(by: number = 1): void {
-    this._indent -= by * this._tabWidth;
-    this._indent = Math.max(this._indent, 0);
-  }
-
-  addSpecial(char: string, offset: number = 0): void {
-    this._specialChar = char;
-    this._specialCol = this._indent + offset;
-  }
-
-  removeSpecial(): void {
-    this._specialChar = undefined;
-  }
-
-  withIndent<R>(action: () => R): R {
-    try {
-      this.indent();
-      return action();
-    } finally {
-      this.unindent();
-    }
-  }
-
-  log(message: any = ''): void {
-    let prefix = ' '.repeat(this._indent);
-    if (this._specialChar !== undefined) {
-      prefix = prefix.substring(0, this._specialCol) +
-        this._specialChar +
-        prefix.substring(this._specialCol + this._specialChar.length);
-      prefix = prefix.substring(0, this._indent + 1);
-    }
-
-    console.log(`${prefix}${message}`);
-  }
-}
+import { IndentingWriter } from './writer';
 
 function round(n: number): string {
   const intDigits = String(Math.floor(n)).length;
@@ -157,6 +110,7 @@ function showTriggers(
 }
 
 export type PrettySummaryOptions = {
+  writer: IndentingWriter;
   title: string;
   kind: 'cumulative' | 'simple';
   entries: AttributionStatistics[];
@@ -164,7 +118,10 @@ export type PrettySummaryOptions = {
 };
 
 export function showPrettySummary(options: PrettySummaryOptions): void {
-  const writer = new IndentingWriter();
+  const writer = options.writer;
+
+  writer.log();
+  writer.log();
   writer.log(options.title.white);
   writer.log('='.repeat(options.title.length).white);
 

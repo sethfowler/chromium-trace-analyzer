@@ -42,6 +42,7 @@
     "pino": "^5.14.0",
     "pino-pretty": "^3.5.0",
     "source-map": "^0.7.3",
+    "strip-ansi-stream": "^1.0.0",
     "tracium": "^0.2.1"
   },
   "devDependencies": {

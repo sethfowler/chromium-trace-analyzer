@@ -15,6 +15,7 @@ import { summarize, SummaryOptions } from './analysis/summarize';
 import { log } from './log';
 import { showPrettySummary } from './prettySummary';
 import { readFileAsJson } from './util';
+import { IndentingWriter } from './writer';
 
 function filterParentValues(key: string, value: any): string | null {
   if (key === 'parent') {
@@ -104,15 +105,17 @@ export async function main() {
     log.level = 'silent';
   }
 
-  console.log(`Reading trace file: `.green + args.trace.white);
+  const writer = new IndentingWriter();
+
+  writer.log(`Reading trace file: `.green + args.trace.white);
   const traceJson = await readFileAsJson(args.trace);
   const trace = await createTaskTrace(traceJson);
 
-  console.log(`Inferring attributions...`.green);
+  writer.log(`Inferring attributions...`.green);
   inferAttributions(trace);
 
   if (args.sourceMap) {
-    console.log(`Applying source map...`.green);
+    writer.log(`Applying source map...`.green);
 
     const specs: SourceMapSpec[] = [];
     for (const spec of args.sourceMap) {
@@ -124,10 +127,10 @@ export async function main() {
     await applySourceMapToAttributions(trace, specs);
   }
 
-  console.log(`Computing breakdowns...`.green);
+  writer.log(`Computing breakdowns...`.green);
   computeBreakdowns(trace);
 
-  console.log(`Adding play-by-plays...`.green);
+  writer.log(`Adding play-by-plays...`.green);
   addPlayByPlays(trace);
 
   const scriptFilterType = args.scriptFilterType;
@@ -145,13 +148,13 @@ export async function main() {
     }
 
     const position = lineNumber === undefined ? '' : `:${lineNumber}`;
-    console.log(
+    writer.log(
       `Applying ${scriptFilterType} filter for ${urlPattern}${position}...`.green
     );
     filterTasksByUrlPattern(trace, urlPattern, lineNumber);
   }
 
-  console.log(`Summarizing...`.green);
+  writer.log(`Summarizing...`.green);
   const options: SummaryOptions = {
     topLevelOnly: args.topLevelOnly,
   };
@@ -161,7 +164,7 @@ export async function main() {
   const summary = summarize(trace, options);
 
   if (args.outputJsonTrace && args.outputJsonSummary === args.outputJsonTrace) {
-      console.log(
+      writer.log(
         `Writing annotated JSON summary and trace: `.green + args.outputJsonTrace.white
       );
       fs.writeFileSync(
@@ -173,7 +176,7 @@ export async function main() {
       );
   } else {
     if (args.outputJsonTrace) {
-      console.log(
+      writer.log(
         `Writing annotated JSON trace: `.green + args.outputJsonTrace.white
       );
       fs.writeFileSync(
@@ -183,7 +186,7 @@ export async function main() {
     }
 
     if (args.outputJsonSummary) {
-      console.log(
+      writer.log(
         `Writing annotated JSON summary: `.green + args.outputJsonSummary.white
       );
       fs.writeFileSync(
@@ -205,9 +208,8 @@ export async function main() {
   }
 
   if (['cumulative', 'all'].includes(args.summary)) {
-    console.log();
-    console.log();
     showPrettySummary({
+      writer,
       title: `Top ${topCount} Source Locations by Cumulative Duration`,
       kind: 'cumulative',
       entries: summary.byAttribution.byCumulativeDuration.slice(0, topCount),
@@ -216,9 +218,8 @@ export async function main() {
   }
 
   if (['longest', 'all'].includes(args.summary)) {
-    console.log();
-    console.log();
     showPrettySummary({
+      writer,
       title: `Top ${topCount} Source Locations by Longest Instance Duration`,
       kind: 'simple',
       entries: summary.byAttribution.byLongestInstanceDuration.slice(0, topCount),
@@ -227,9 +228,8 @@ export async function main() {
   }
 
   if (['tasks', 'all'].includes(args.summary)) {
-    console.log();
-    console.log();
     showPrettySummary({
+      writer,
       title: `Top ${topCount} Tasks by Duration`,
       kind: 'simple',
       entries: summary.byTaskDuration.slice(0, topCount),
