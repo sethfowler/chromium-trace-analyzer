@@ -13,6 +13,7 @@ import {
   sumOfBreakdowns
 } from '../breakdowns';
 import { log } from '../log';
+import { HasPlayByPlay, PlayByPlay } from '../playbyplays';
 import { HasTaskId, TaskTrace, TaskWithData } from '../taskgraph';
 
 // Data about how the time associated with a particular attribution is being
@@ -31,6 +32,11 @@ export type AttributionStatistics = {
 
   // The tasks that contributed to the breakdown.
   taskIds: number[];
+
+  // If present, the play-by-play for the associated task. (This won't be
+  // present for cumulative statistics, since it doesn't make sense in that
+  // context.)
+  playByPlay?: PlayByPlay;
 
   // If present, the time that the associated task started. (This won't be
   // present for cumulative statistics, since it doesn't make sense in that
@@ -80,7 +86,7 @@ function gatherStatistics(
   cumulativeStatsMap: Map<Attribution, AttributionStatistics>,
   longestDurationStatsMap: Map<Attribution, AttributionStatistics>,
   taskStatsMap: Map<number, AttributionStatistics>,
-  tasks: TaskWithData<HasAttributionInfo & HasBreakdown & HasTaskId>[]
+  tasks: TaskWithData<HasAttributionInfo & HasBreakdown & HasPlayByPlay & HasTaskId>[]
 ): void {
   for (const task of tasks) {
     // Gather statistics for all child tasks.
@@ -136,6 +142,7 @@ function gatherStatistics(
         context,
         breakdownsByAttribution: task.metadata.breakdownsByAttribution,
         breakdown: task.metadata.breakdown,
+        playByPlay: task.metadata.playByPlay,
         startTime: task.startTime,
         taskIds: [taskId]
       });
@@ -147,6 +154,7 @@ function gatherStatistics(
       context,
       breakdownsByAttribution: task.metadata.breakdownsByAttribution,
       breakdown: task.metadata.breakdown,
+      playByPlay: task.metadata.playByPlay,
       startTime: task.startTime,
       taskIds: [taskId]
     });
@@ -176,7 +184,7 @@ export type SummaryOptions = {
 };
 
 export function createSummary(
-  trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasTaskId, {}>,
+  trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasPlayByPlay & HasTaskId, {}>,
   options: SummaryOptions
 ): Summary {
   // Statistics that we track per-source-location.
@@ -240,7 +248,7 @@ export function createSummary(
 }
 
 export function summarize(
-  trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasTaskId, {}>,
+  trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasPlayByPlay & HasTaskId, {}>,
   options: SummaryOptions
 ): Summary {
   log.debug(`Starting summarize pass.`);

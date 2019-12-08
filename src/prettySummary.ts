@@ -6,6 +6,8 @@ import { AttributionStatistics } from './analysis/summarize';
 
 class IndentingWriter {
   private _indent: number = 0;
+  private _specialChar: string | undefined = undefined;
+  private _specialCol: number = 0;
 
   constructor(private _tabWidth: number = 2) {
   }
@@ -19,6 +21,15 @@ class IndentingWriter {
     this._indent = Math.max(this._indent, 0);
   }
 
+  addSpecial(char: string, offset: number = 0): void {
+    this._specialChar = char;
+    this._specialCol = this._indent + offset;
+  }
+
+  removeSpecial(): void {
+    this._specialChar = undefined;
+  }
+
   withIndent<R>(action: () => R): R {
     try {
       this.indent();
@@ -29,7 +40,15 @@ class IndentingWriter {
   }
 
   log(message: any = ''): void {
-    console.log(`${' '.repeat(this._indent)}${message}`);
+    let prefix = ' '.repeat(this._indent);
+    if (this._specialChar !== undefined) {
+      prefix = prefix.substring(0, this._specialCol) +
+        this._specialChar +
+        prefix.substring(this._specialCol + this._specialChar.length);
+      prefix = prefix.substring(0, this._indent + 1);
+    }
+
+    console.log(`${prefix}${message}`);
   }
 }
 
@@ -51,7 +70,7 @@ function showTiming(
   if (stats.startTime !== undefined) {
     writer.log(`- Start time: `.bold + `${round(stats.startTime)}ms`);
   }
-  writer.log(`- Duration: `.bold + `${round(stats.breakdown.total)}ms`.red);
+  writer.log(`- Total duration: `.bold + `${round(stats.breakdown.total)}ms`.red);
 }
 
 function showHighlightedSource(
@@ -137,17 +156,20 @@ function showTriggers(
   }
 }
 
-export function showPrettySummary(
-  title: string,
-  kind: 'cumulative' | 'simple',
-  entries: AttributionStatistics[]
-): void {
+export type PrettySummaryOptions = {
+  title: string;
+  kind: 'cumulative' | 'simple';
+  entries: AttributionStatistics[];
+  showPlayByPlay: boolean;
+};
+
+export function showPrettySummary(options: PrettySummaryOptions): void {
   const writer = new IndentingWriter();
-  writer.log(title.white);
-  writer.log('='.repeat(title.length).white);
+  writer.log(options.title.white);
+  writer.log('='.repeat(options.title.length).white);
 
   writer.withIndent(() => {
-    for (const stats of entries) {
+    for (const stats of options.entries) {
       writer.log();
 
       showAttribution(writer, stats.attribution, {
@@ -155,7 +177,7 @@ export function showPrettySummary(
       });
 
       writer.withIndent(() => {
-        showTiming(writer, kind, stats);
+        showTiming(writer, options.kind, stats);
 
         writer.log(`- Breakdown:`.bold);
         writer.withIndent(() => {
@@ -198,6 +220,47 @@ export function showPrettySummary(
             showTriggers(writer, longestInstance.context);
           });
         }
+
+        if (options.showPlayByPlay && stats.playByPlay) {
+          writer.log(`- Play-by-play:`.bold);
+          const playByPlay = stats.playByPlay;
+          const total = stats.breakdown.total;
+
+          writer.withIndent(() => {
+            writer.addSpecial('|', 0);
+            writer.withIndent(() => {
+              let lastAttribution: Attribution | undefined;
+
+              for (const entry of playByPlay) {
+                if (entry.attribution !== lastAttribution) {
+                  if (lastAttribution !== undefined) {
+                    writer.log();
+                  }
+                  lastAttribution = entry.attribution;
+
+                  showAttribution(writer, entry.attribution, {
+                    brief: true,
+                    //extraMetadata:
+                    //  `${round(percentage)}% - ${round(duration)}ms`
+                  });
+                }
+
+                writer.withIndent(() => {
+                  const duration = entry.breakdown.total;
+                  const percentage = (duration / total) * 100;
+
+                  writer.log(
+                    `- ${entry.name.bold} ` +
+                    `(${round(percentage)}% of total - ${round(duration)}ms)`.white
+                  );
+                });
+
+              }
+            });
+            writer.removeSpecial();
+          });
+        }
+
       });
     }
   });

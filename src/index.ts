@@ -2,6 +2,7 @@ import args from 'commander';
 import 'colors';
 import fs from 'fs';
 
+import { addPlayByPlays } from './analysis/addPlayByPlays';
 import {
   applySourceMapToAttributions,
   SourceMapSpec
@@ -76,6 +77,11 @@ export async function main() {
       10
     )
     .option(
+      '--playByPlay',
+      'Show a detailed play-by-play of each task.',
+      false
+    )
+    .option(
       '--outputJsonTrace <outputFile>',
       'Write an annotated JSON trace with a lot more detail to outputFile.'
     )
@@ -120,6 +126,9 @@ export async function main() {
 
   console.log(`Computing breakdowns...`.green);
   computeBreakdowns(trace);
+
+  console.log(`Adding play-by-plays...`.green);
+  addPlayByPlays(trace);
 
   const scriptFilterType = args.scriptFilterType;
   if (scriptFilterType !== 'fine' && scriptFilterType !== 'coarse') {
@@ -198,30 +207,33 @@ export async function main() {
   if (['cumulative', 'all'].includes(args.summary)) {
     console.log();
     console.log();
-    showPrettySummary(
-      `Top ${topCount} Source Locations by Cumulative Duration`,
-      'cumulative',
-      summary.byAttribution.byCumulativeDuration.slice(0, topCount),
-    );
+    showPrettySummary({
+      title: `Top ${topCount} Source Locations by Cumulative Duration`,
+      kind: 'cumulative',
+      entries: summary.byAttribution.byCumulativeDuration.slice(0, topCount),
+      showPlayByPlay: args.playByPlay,
+    });
   }
 
   if (['longest', 'all'].includes(args.summary)) {
     console.log();
     console.log();
-    showPrettySummary(
-      `Top ${topCount} Source Locations by Longest Instance Duration`,
-      'simple',
-      summary.byAttribution.byLongestInstanceDuration.slice(0, topCount)
-    );
+    showPrettySummary({
+      title: `Top ${topCount} Source Locations by Longest Instance Duration`,
+      kind: 'simple',
+      entries: summary.byAttribution.byLongestInstanceDuration.slice(0, topCount),
+      showPlayByPlay: args.playByPlay,
+    });
   }
 
   if (['tasks', 'all'].includes(args.summary)) {
     console.log();
     console.log();
-    showPrettySummary(
-      `Top ${topCount} Tasks by Duration`,
-      'simple',
-      summary.byTaskDuration.slice(0, topCount)
-    );
+    showPrettySummary({
+      title: `Top ${topCount} Tasks by Duration`,
+      kind: 'simple',
+      entries: summary.byTaskDuration.slice(0, topCount),
+      showPlayByPlay: args.playByPlay,
+    });
   }
 }
