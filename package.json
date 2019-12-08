@@ -1,6 +1,6 @@
 {
   "name": "@sethfowler/chromium-trace-analyzer",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "An analyzer for Chromium trace events.",
   "bin": {
     "chromium-trace-analyzer": "bin/chromium-trace-analyzer"
