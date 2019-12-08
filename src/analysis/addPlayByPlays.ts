@@ -62,7 +62,13 @@ function taskCategory(name: string): TaskCategory {
     case 'XHRLoad':
       return 'network';
 
+    case 'CompositeLayers':
+    case 'Layout':
+    case 'Paint':
+    case 'PaintImage':
     case 'ParseHTML':
+    case 'UpdateLayer':
+    case 'UpdateLayerTree':
     case 'UpdateLayoutTree':
       return 'rendering';
 
@@ -81,6 +87,7 @@ function taskCategory(name: string): TaskCategory {
     case 'V8.StackGuard':
       return 'script';
 
+    case 'FireAnimationFrame':
     case 'ScheduledAction::execute':
     case 'TimerFire':
       return 'task';
