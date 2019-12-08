@@ -25,7 +25,14 @@ function filterParentValues(key: string, value: any): string | null {
 }
 
 export async function main() {
-  const summaryNames = ['cumulative', 'longest', 'tasks', 'all', 'none'];
+  const summaryNames = [
+    'cumulative',
+    'global',
+    'longest',
+    'tasks',
+    'all',
+    'none'
+  ];
 
   args
     .option(
@@ -233,6 +240,16 @@ export async function main() {
       title: `Top ${topCount} Tasks by Duration`,
       kind: 'simple',
       entries: summary.byTaskDuration.slice(0, topCount),
+      showPlayByPlay: args.playByPlay,
+    });
+  }
+
+  if (['global', 'all'].includes(args.summary)) {
+    showPrettySummary({
+      writer,
+      title: `Global Summary`,
+      kind: 'cumulative',
+      entries: [summary.global],
       showPlayByPlay: args.playByPlay,
     });
   }

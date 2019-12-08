@@ -79,6 +79,11 @@ export type HasBreakdown = {
   breakdownsByAttribution: Map<Attribution, Breakdown>;
 };
 
+export type HasGlobalBreakdown = {
+  globalBreakdown: Breakdown;
+  globalBreakdownsByAttribution: Map<Attribution, Breakdown>;
+};
+
 // Merge the totals from one breakdown into another using the provided
 // operation.
 export function mergeBreakdownInto(

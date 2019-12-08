@@ -4,11 +4,13 @@ import {
   Attribution,
   AttributionContext,
   HasAttributionInfo,
+  HasAttributionMap,
   isAttributedTo
 } from '../attributions';
 import {
   Breakdown,
   HasBreakdown,
+  HasGlobalBreakdown,
   mergeBreakdownsByAttribution,
   sumOfBreakdowns
 } from '../breakdowns';
@@ -173,6 +175,8 @@ export type Summary = {
   // during initialization and things that take a lot of time during the steady
   // state.
   byTimelineBuckets: [];
+
+  global: AttributionStatistics;
 };
 
 export type SummaryOptions = {
@@ -184,7 +188,10 @@ export type SummaryOptions = {
 };
 
 export function createSummary(
-  trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasPlayByPlay & HasTaskId, {}>,
+  trace: TaskTrace<
+    HasAttributionInfo & HasBreakdown & HasPlayByPlay & HasTaskId,
+    HasAttributionMap & HasGlobalBreakdown
+  >,
   options: SummaryOptions
 ): Summary {
   // Statistics that we track per-source-location.
@@ -237,6 +244,24 @@ export function createSummary(
     byTaskDuration = byTaskDuration.filter(filterStats);
   }
 
+  // Create a representation of the global breakdown statistics.
+  // TODO: Handle this more elegantly.
+  const globalAttributionStatistics: AttributionStatistics = {
+    attribution: trace.metadata.attributionMap.create({
+      kind: 'file',
+      url: 'Active Time',
+    }),
+    context: {
+      isTopLevel: true,
+      isAttributionRoot: true,
+      lighthouseAttributableURLs: [],
+      triggers: [],
+    },
+    breakdown: trace.metadata.globalBreakdown,
+    breakdownsByAttribution: trace.metadata.globalBreakdownsByAttribution,
+    taskIds: [],
+  };
+
   return {
     byAttribution: {
       byCumulativeDuration,
@@ -244,11 +269,15 @@ export function createSummary(
     },
     byTaskDuration,
     byTimelineBuckets: [],
+    global: globalAttributionStatistics,
   };
 }
 
 export function summarize(
-  trace: TaskTrace<HasAttributionInfo & HasBreakdown & HasPlayByPlay & HasTaskId, {}>,
+  trace: TaskTrace<
+    HasAttributionInfo & HasBreakdown & HasPlayByPlay & HasTaskId,
+    HasAttributionMap & HasGlobalBreakdown
+  >,
   options: SummaryOptions
 ): Summary {
   log.debug(`Starting summarize pass.`);

@@ -2,6 +2,7 @@ import { Attribution, HasAttributionInfo } from '../attributions';
 import {
   Breakdown,
   HasBreakdown,
+  HasGlobalBreakdown,
   mergeBreakdownsByAttribution,
   sumOfBreakdowns,
   updateBreakdownForAttribution
@@ -94,10 +95,14 @@ export function computeBreakdowns<
   T extends TaskTrace<HasAttributionInfo & HasTaskId, {}>
 >(
   trace: T
-): asserts trace is TaskTraceWithAddedData<T, HasBreakdown, {}> {
+): asserts trace is TaskTraceWithAddedData<T, HasBreakdown, HasGlobalBreakdown> {
   log.debug(`Starting computeBreakdowns pass.`);
 
-  const traceWithAddedData = trace as TaskTraceWithAddedData<T, HasBreakdown, {}>
-  gatherBreakdowns(traceWithAddedData.tasks);
-  gatherBreakdownsByAttribution(traceWithAddedData.tasks);
+  const traceWithAddedData =
+    trace as TaskTraceWithAddedData<T, HasBreakdown, HasGlobalBreakdown >
+
+  traceWithAddedData.metadata.globalBreakdown =
+    gatherBreakdowns(traceWithAddedData.tasks);
+  traceWithAddedData.metadata.globalBreakdownsByAttribution =
+    gatherBreakdownsByAttribution(traceWithAddedData.tasks);
 }
