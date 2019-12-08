@@ -170,6 +170,8 @@ export type Summary = {
   };
   byTaskDuration: AttributionStatistics[];
 
+  byTimeline: AttributionStatistics[];
+
   // TODO: It might be interesting to provide statistics for bucketed chunks of
   // the timeline so we could distinguish between things that take a lot of time
   // during initialization and things that take a lot of time during the steady
@@ -224,6 +226,12 @@ export function createSummary(
   let byTaskDuration = [...taskStatsMap.values()]
     .sort((a, b) => b.breakdown.total - a.breakdown.total);
 
+  // "byTimeline" uses the same data as "byTaskDuration", but it's sorted by
+  // task id, which gives timeline order.
+  let byTimeline = [...taskStatsMap.entries()]
+    .sort(([aId, _aV], [bId, _bV]) => aId - bId)
+    .map(([_id, v]) => v);
+
   // Filter the results if the caller requested it.
   if (options.scriptUrlPattern || options.topLevelOnly) {
     const filterStats = (stats: AttributionStatistics): boolean => {
@@ -242,6 +250,7 @@ export function createSummary(
     byCumulativeDuration = byCumulativeDuration.filter(filterStats);
     byLongestInstanceDuration = byLongestInstanceDuration.filter(filterStats);
     byTaskDuration = byTaskDuration.filter(filterStats);
+    byTimeline = byTimeline.filter(filterStats);
   }
 
   // Create a representation of the global breakdown statistics.
@@ -268,6 +277,7 @@ export function createSummary(
       byLongestInstanceDuration,
     },
     byTaskDuration,
+    byTimeline,
     byTimelineBuckets: [],
     global: globalAttributionStatistics,
   };

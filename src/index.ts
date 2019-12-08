@@ -30,6 +30,7 @@ export async function main() {
     'global',
     'longest',
     'tasks',
+    'timeline',
     'all',
     'none'
   ];
@@ -83,6 +84,11 @@ export async function main() {
       '--top <N>',
       'Include the top N tasks in the summary.',
       10
+    )
+    .option(
+      '--all',
+      `Include the all tasks in the summary. (Overrides 'top'.)`,
+      false
     )
     .option(
       '--playByPlay',
@@ -203,11 +209,17 @@ export async function main() {
     }
   }
 
-  const topCount = Number(args.top);
+  let topCount = Number(args.top);
+  let topCountPrefix = `Top ${topCount}`;
   if (Number.isNaN(topCount)) {
     console.error(`--top requires a numeric argument`);
     process.exit(1);
   }
+  if (args.all) {
+    topCount = Number.MAX_SAFE_INTEGER;
+    topCountPrefix = 'All';
+  }
+
 
   if (!summaryNames.includes(args.summary)) {
     console.error(`Unknown --summary '${args.summary}'`);
@@ -217,7 +229,7 @@ export async function main() {
   if (['cumulative', 'all'].includes(args.summary)) {
     showPrettySummary({
       writer,
-      title: `Top ${topCount} Source Locations by Cumulative Duration`,
+      title: `${topCountPrefix} Source Locations by Cumulative Duration`,
       kind: 'cumulative',
       entries: summary.byAttribution.byCumulativeDuration.slice(0, topCount),
       showPlayByPlay: args.playByPlay,
@@ -227,7 +239,7 @@ export async function main() {
   if (['longest', 'all'].includes(args.summary)) {
     showPrettySummary({
       writer,
-      title: `Top ${topCount} Source Locations by Longest Instance Duration`,
+      title: `${topCountPrefix} Source Locations by Longest Instance Duration`,
       kind: 'simple',
       entries: summary.byAttribution.byLongestInstanceDuration.slice(0, topCount),
       showPlayByPlay: args.playByPlay,
@@ -237,9 +249,19 @@ export async function main() {
   if (['tasks', 'all'].includes(args.summary)) {
     showPrettySummary({
       writer,
-      title: `Top ${topCount} Tasks by Duration`,
+      title: `${topCountPrefix} Tasks by Duration`,
       kind: 'simple',
       entries: summary.byTaskDuration.slice(0, topCount),
+      showPlayByPlay: args.playByPlay,
+    });
+  }
+
+  if (['timeline', 'all'].includes(args.summary)) {
+    showPrettySummary({
+      writer,
+      title: `${topCountPrefix} Tasks by Timeline Order`,
+      kind: 'simple',
+      entries: summary.byTimeline.slice(0, topCount),
       showPlayByPlay: args.playByPlay,
     });
   }
