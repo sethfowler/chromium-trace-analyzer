@@ -1,14 +1,14 @@
 # chromium-trace-analyzer
 
-An analyzer for Chromium trace event files. You can get your hands on one of
-these files by saving a profile from the Chrome developer tools or by saving a
-trace from a Lighthouse audit. Given a trace, `chromium-trace-analyzer` can:
+This is an analyzer for Chromium trace event files. You can get your hands on
+one of these files by saving a profile from the Chrome developer tools or by
+saving a trace from a Lighthouse audit. Given a trace, `chromium-trace-analyzer`
+can:
 * Summarize it, so you can get the information you need quickly.
 * Filter out irrelevant tasks and events, so you can focus on the information
   that's relevant to your code.
-* Annotate tasks and events with source locations in more detail than the
-  developer tools natively provide, so you can understand where your performance
-  is going.
+* Provide fine-grained attributions and breakdowns of tasks and events, so you
+  can understand where your performance is going.
 
 Source mapping and syntax highlighting are supported to help make the trace
 summaries as readable as possible. Here's an example summary entry:
@@ -24,6 +24,24 @@ npm install -g @sethfowler/chromium-trace-analyzer
 
 
 ## Usage
+
+First, some quick vocabulary. `chromium-trace-analyzer` deals with two related
+kinds of entities:
+ - *Events* are the things that actually appear in the trace file. An event
+   tells you about something that happened at a particular point in the
+   trace timeline. Events are arranged in a sequence; there's no concept of
+   nested events. If `foo()` in `foo.js` calls `bar()` in `bar.js`, `foo()` and
+   `bar()` will show up as two separate events at different points in the
+   timeline, and they won't be explicitly related to each other.
+ - *Tasks* are the things that Lighthouse's trace parser generates. Each task
+   corresponds to an event, but tasks are arranged in a tree based on the way
+   that events overlap on the timeline. In the example above, Lighthouse's
+   parser would see that `bar()`'s portion of the timeline is completely inside
+   `foo()`'s, and it will make the task for `bar()` a child of the task for
+   `foo()`.
+
+`chromium-trace-analyzer` mostly works in terms of tasks since they provide more
+information than the raw events.
 
 To get a quick summary of the hottest tasks in the trace from several
 perspectives:
